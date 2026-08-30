@@ -1,0 +1,612 @@
+#!/usr/bin/env python3
+"""
+omarchy-minimize: Native Omarchy & Hyprland Window Minimize & Off-Screen Grouping Engine.
+Manages minimizing active windows to uninhabited off-screen display coordinates grouped
+by application class, and restoring windows back to their exact workspace and geometry.
+Supports smart context mouse clicks (minimize on window, unhide/restore on desktop).
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+CACHE_DIR = Path.home() / ".cache" / "omarchy"
+STATE_FILE = CACHE_DIR / "minimized-windows.json"
+BASE_OFFSCREEN_X = 50000
+BASE_OFFSCREEN_Y = 50000
+GROUP_OFFSET_X = 2500
+WINDOW_OFFSET_Y = 150
+
+
+def run_hyprctl(args: list[str]) -> tuple[int, str]:
+    """Execute hyprctl with args and return (code, stdout)."""
+    try:
+        res = subprocess.run(
+            ["hyprctl", *args],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        return res.returncode, res.stdout
+    except Exception as e:
+        return 1, str(e)
+
+
+def get_hypr_json(command: str):
+    """Query hyprctl -j <command> and parse JSON."""
+    code, out = run_hyprctl(["-j", command])
+    if code != 0 or not out.strip():
+        return None
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError:
+        return None
+
+
+def execute_hypr_batch(dispatches: list[str]) -> bool:
+    """Execute a list of dispatches using hyprctl --batch."""
+    if not dispatches:
+        return True
+    batch_str = " ; ".join(f"dispatch {d}" for d in dispatches)
+    code, out = run_hyprctl(["--batch", batch_str])
+    if code != 0:
+        for d in dispatches:
+            run_hyprctl(["dispatch", d])
+    return True
+
+
+def load_state() -> list[dict]:
+    """Load minimized windows state from cache file."""
+    if not STATE_FILE.exists():
+        return []
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                return data
+            return []
+    except Exception:
+        return []
+
+
+def save_state(state: list[dict]):
+    """Save minimized windows state to cache file."""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp_file = STATE_FILE.with_suffix(".tmp")
+    with open(tmp_file, "w", encoding="utf-8") as f:
+        json.dump(state, f, indent=2)
+    tmp_file.replace(STATE_FILE)
+
+
+def sanitize_tag(name: str) -> str:
+    """Sanitize application class for Hyprland window tag."""
+    clean = re.sub(r"[^a-zA-Z0-9_-]", "_", name or "app")
+    return clean[:30]
+
+
+def reconcile_state() -> tuple[list[dict], list[dict]]:
+    """
+    Reconcile saved state against currently running Hyprland clients.
+    Returns (living_minimized_windows, all_clients).
+    """
+    clients = get_hypr_json("clients") or []
+    client_map = {c.get("address"): c for c in clients if c.get("address")}
+    
+    saved = load_state()
+    living = []
+    
+    for item in saved:
+        addr = item.get("address")
+        if addr in client_map:
+            live_win = client_map[addr]
+            if live_win.get("title"):
+                item["current_title"] = live_win["title"]
+            living.append(item)
+    
+    if len(living) != len(saved):
+        save_state(living)
+        
+    return living, clients
+
+
+def get_app_group_index(state: list[dict], app_class: str) -> tuple[int, int]:
+    """
+    Calculate the horizontal group index and vertical window index for offscreen grouping.
+    Returns (group_index, window_index_in_group).
+    """
+    groups: list[str] = []
+    group_counts: dict[str, int] = {}
+    
+    for w in state:
+        cls = (w.get("class") or "unknown").lower()
+        if cls not in groups:
+            groups.append(cls)
+            group_counts[cls] = 0
+        group_counts[cls] += 1
+
+    target_cls = (app_class or "unknown").lower()
+    if target_cls in groups:
+        grp_idx = groups.index(target_cls)
+        win_idx = group_counts[target_cls]
+    else:
+        grp_idx = len(groups)
+        win_idx = 0
+        
+    return grp_idx, win_idx
+
+
+def cmd_minimize(target_addr: str | None = None) -> int:
+    """Minimize a window by moving it off-screen to its application group cluster."""
+    living_state, clients = reconcile_state()
+    client_map = {c.get("address"): c for c in clients if c.get("address")}
+    
+    target_win = None
+    if target_addr:
+        if not target_addr.startswith("0x"):
+            target_addr = "0x" + target_addr
+        target_win = client_map.get(target_addr)
+    else:
+        active = get_hypr_json("activewindow")
+        if active and active.get("address") and active.get("address") != "0x0":
+            target_addr = active.get("address")
+            target_win = client_map.get(target_addr, active)
+
+    if not target_win or not target_addr:
+        print("No active window to minimize.", file=sys.stderr)
+        return 1
+
+    # Check if already minimized
+    if any(w.get("address") == target_addr for w in living_state):
+        print(f"Window {target_addr} is already minimized.")
+        return 0
+
+    app_class = target_win.get("class") or target_win.get("initialClass") or "window"
+    title = target_win.get("title") or target_win.get("initialTitle") or app_class
+    ws = target_win.get("workspace", {})
+    ws_id = ws.get("id", 1)
+    ws_name = ws.get("name", str(ws_id))
+    floating = bool(target_win.get("floating", False))
+    at = target_win.get("at", [0, 0])
+    size = target_win.get("size", [800, 600])
+    fullscreen = target_win.get("fullscreen", 0)
+    pinned = bool(target_win.get("pinned", False))
+    monitor = target_win.get("monitor", 0)
+
+    # Calculate offscreen coordinates grouped by class
+    group_idx, win_idx = get_app_group_index(living_state, app_class)
+    dest_x = BASE_OFFSCREEN_X + (group_idx * GROUP_OFFSET_X)
+    dest_y = BASE_OFFSCREEN_Y + (win_idx * WINDOW_OFFSET_Y)
+
+    window_record = {
+        "address": target_addr,
+        "class": app_class,
+        "initialClass": target_win.get("initialClass", app_class),
+        "title": title,
+        "workspace": {
+            "id": ws_id,
+            "name": ws_name
+        },
+        "floating": floating,
+        "at": at,
+        "size": size,
+        "fullscreen": fullscreen,
+        "pinned": pinned,
+        "monitor": monitor,
+        "offscreen_at": [dest_x, dest_y],
+        "group_index": group_idx,
+        "minimized_at": time.time()
+    }
+
+    # Prepare Lua dispatch commands
+    dispatches = []
+    
+    # 1. Un-fullscreen if needed
+    if fullscreen != 0:
+        dispatches.append(f'hl.dsp.window.fullscreen({{ window = "address:{target_addr}", mode = "fullscreen" }})')
+        
+    # 2. Float if currently tiled
+    if not floating:
+        dispatches.append(f'hl.dsp.window.float({{ window = "address:{target_addr}", action = "toggle" }})')
+        
+    # 3. Move off-screen to group cluster
+    dispatches.append(f'hl.dsp.window.move({{ window = "address:{target_addr}", x = {dest_x}, y = {dest_y} }})')
+    
+    # 4. Tag as minimized
+    tag_clean = sanitize_tag(app_class)
+    dispatches.append(f'hl.dsp.window.tag({{ window = "address:{target_addr}", tag = "+minimized" }})')
+    dispatches.append(f'hl.dsp.window.tag({{ window = "address:{target_addr}", tag = "+min_grp_{tag_clean}" }})')
+    
+    # 5. Cycle focus to next window
+    dispatches.append('hl.dsp.window.cycle_next()')
+
+    success = execute_hypr_batch(dispatches)
+    if success:
+        living_state.append(window_record)
+        save_state(living_state)
+        print(f"Minimized [{app_class}] \"{title}\" to off-screen cluster ({dest_x}, {dest_y}).")
+        return 0
+    else:
+        print(f"Failed to minimize window {target_addr}.", file=sys.stderr)
+        return 1
+
+
+def cmd_restore_window(target_addr: str) -> int:
+    """Restore a specific minimized window back to its original workspace and geometry."""
+    living_state, clients = reconcile_state()
+    
+    if not target_addr.startswith("0x"):
+        target_addr = "0x" + target_addr
+        
+    matched = None
+    remaining = []
+    for w in living_state:
+        if w.get("address") == target_addr:
+            matched = w
+        else:
+            remaining.append(w)
+            
+    if not matched:
+        print(f"Window {target_addr} not found in minimized list.", file=sys.stderr)
+        return 1
+
+    orig_ws_id = matched.get("workspace", {}).get("id", 1)
+    orig_floating = matched.get("floating", False)
+    orig_at = matched.get("at", [100, 100])
+    orig_size = matched.get("size", [800, 600])
+    orig_fullscreen = matched.get("fullscreen", 0)
+    orig_pinned = matched.get("pinned", False)
+    tag_clean = sanitize_tag(matched.get("class", ""))
+
+    dispatches = [
+        f'hl.dsp.window.move({{ window = "address:{target_addr}", workspace = "{orig_ws_id}", follow = false }})'
+    ]
+
+    if orig_floating:
+        dispatches.append(f'hl.dsp.window.move({{ window = "address:{target_addr}", x = {orig_at[0]}, y = {orig_at[1]} }})')
+        dispatches.append(f'hl.dsp.window.resize({{ window = "address:{target_addr}", x = {orig_size[0]}, y = {orig_size[1]} }})')
+    else:
+        dispatches.append(f'hl.dsp.window.float({{ window = "address:{target_addr}", action = "toggle" }})')
+
+    if orig_fullscreen > 0:
+        dispatches.append(f'hl.dsp.window.fullscreen({{ window = "address:{target_addr}", mode = "fullscreen" }})')
+
+    if orig_pinned:
+        dispatches.append(f'hl.dsp.window.pin({{ window = "address:{target_addr}" }})')
+
+    dispatches.append(f'hl.dsp.window.tag({{ window = "address:{target_addr}", tag = "-minimized" }})')
+    dispatches.append(f'hl.dsp.window.tag({{ window = "address:{target_addr}", tag = "-min_grp_{tag_clean}" }})')
+    dispatches.append(f'hl.dsp.focus({{ window = "address:{target_addr}" }})')
+
+    success = execute_hypr_batch(dispatches)
+    if success:
+        save_state(remaining)
+        print(f"Restored [{matched.get('class')}] \"{matched.get('title')}\" to workspace {orig_ws_id}.")
+        return 0
+    else:
+        print(f"Failed to restore window {target_addr}.", file=sys.stderr)
+        return 1
+
+
+def cmd_restore_all() -> int:
+    """Restore all minimized windows back to their original workspaces and geometries."""
+    living_state, _ = reconcile_state()
+    if not living_state:
+        print("No minimized windows to restore.")
+        return 0
+
+    dispatches = []
+    last_addr = None
+
+    for w in living_state:
+        addr = w.get("address")
+        if not addr:
+            continue
+        last_addr = addr
+        orig_ws_id = w.get("workspace", {}).get("id", 1)
+        orig_floating = w.get("floating", False)
+        orig_at = w.get("at", [100, 100])
+        orig_size = w.get("size", [800, 600])
+        orig_fullscreen = w.get("fullscreen", 0)
+        orig_pinned = w.get("pinned", False)
+        tag_clean = sanitize_tag(w.get("class", ""))
+
+        dispatches.append(f'hl.dsp.window.move({{ window = "address:{addr}", workspace = "{orig_ws_id}", follow = false }})')
+
+        if orig_floating:
+            dispatches.append(f'hl.dsp.window.move({{ window = "address:{addr}", x = {orig_at[0]}, y = {orig_at[1]} }})')
+            dispatches.append(f'hl.dsp.window.resize({{ window = "address:{addr}", x = {orig_size[0]}, y = {orig_size[1]} }})')
+        else:
+            dispatches.append(f'hl.dsp.window.float({{ window = "address:{addr}", action = "toggle" }})')
+
+        if orig_fullscreen > 0:
+            dispatches.append(f'hl.dsp.window.fullscreen({{ window = "address:{addr}", mode = "fullscreen" }})')
+
+        if orig_pinned:
+            dispatches.append(f'hl.dsp.window.pin({{ window = "address:{addr}" }})')
+
+        dispatches.append(f'hl.dsp.window.tag({{ window = "address:{addr}", tag = "-minimized" }})')
+        dispatches.append(f'hl.dsp.window.tag({{ window = "address:{addr}", tag = "-min_grp_{tag_clean}" }})')
+
+    if last_addr:
+        dispatches.append(f'hl.dsp.focus({{ window = "address:{last_addr}" }})')
+
+    success = execute_hypr_batch(dispatches)
+    if success:
+        save_state([])
+        print(f"Restored all {len(living_state)} minimized window(s).")
+        return 0
+    else:
+        print("Failed to restore all windows.", file=sys.stderr)
+        return 1
+
+
+def cmd_restore_last() -> int:
+    """Restore the most recently minimized window (LIFO)."""
+    living_state, _ = reconcile_state()
+    if not living_state:
+        print("No minimized windows to restore.")
+        return 0
+    last_window = living_state[-1]
+    return cmd_restore_window(last_window["address"])
+
+
+def cmd_restore_app(app_class: str) -> int:
+    """Restore all minimized windows matching the specified application class."""
+    living_state, _ = reconcile_state()
+    target_cls = app_class.lower()
+    
+    matching = [w for w in living_state if (w.get("class") or "").lower() == target_cls]
+    if not matching:
+        print(f"No minimized windows found for application '{app_class}'.")
+        return 0
+
+    dispatches = []
+    last_addr = None
+    remaining = [w for w in living_state if (w.get("class") or "").lower() != target_cls]
+
+    for w in matching:
+        addr = w.get("address")
+        last_addr = addr
+        orig_ws_id = w.get("workspace", {}).get("id", 1)
+        orig_floating = w.get("floating", False)
+        orig_at = w.get("at", [100, 100])
+        orig_size = w.get("size", [800, 600])
+        orig_fullscreen = w.get("fullscreen", 0)
+        tag_clean = sanitize_tag(w.get("class", ""))
+
+        dispatches.append(f'hl.dsp.window.move({{ window = "address:{addr}", workspace = "{orig_ws_id}", follow = false }})')
+        if orig_floating:
+            dispatches.append(f'hl.dsp.window.move({{ window = "address:{addr}", x = {orig_at[0]}, y = {orig_at[1]} }})')
+            dispatches.append(f'hl.dsp.window.resize({{ window = "address:{addr}", x = {orig_size[0]}, y = {orig_size[1]} }})')
+        else:
+            dispatches.append(f'hl.dsp.window.float({{ window = "address:{addr}", action = "toggle" }})')
+        if orig_fullscreen > 0:
+            dispatches.append(f'hl.dsp.window.fullscreen({{ window = "address:{addr}", mode = "fullscreen" }})')
+        dispatches.append(f'hl.dsp.window.tag({{ window = "address:{addr}", tag = "-minimized" }})')
+        dispatches.append(f'hl.dsp.window.tag({{ window = "address:{addr}", tag = "-min_grp_{tag_clean}" }})')
+
+    if last_addr:
+        dispatches.append(f'hl.dsp.focus({{ window = "address:{last_addr}" }})')
+
+    success = execute_hypr_batch(dispatches)
+    if success:
+        save_state(remaining)
+        print(f"Restored {len(matching)} window(s) for '{app_class}'.")
+        return 0
+    return 1
+
+
+def cmd_smart_click() -> int:
+    """
+    Context-aware Super + Middle Click handler:
+    - If cursor is on an open window -> minimizes that window.
+    - If cursor is on empty desktop / wallpaper / gap -> restores all minimized windows (unhide).
+    """
+    cursor = get_hypr_json("cursorpos")
+    if not cursor:
+        return cmd_minimize()
+
+    cx = cursor.get("x", 0)
+    cy = cursor.get("y", 0)
+
+    monitors = get_hypr_json("monitors") or []
+    active_ws_id = None
+    for m in monitors:
+        mx = m.get("x", 0)
+        my = m.get("y", 0)
+        mw = m.get("width", 1920)
+        mh = m.get("height", 1080)
+        scale = m.get("scale", 1.0)
+        eff_w = mw / scale if scale > 0 else mw
+        eff_h = mh / scale if scale > 0 else mh
+        if mx <= cx <= mx + eff_w and my <= cy <= my + eff_h:
+            active_ws_id = m.get("activeWorkspace", {}).get("id")
+            break
+
+    clients = get_hypr_json("clients") or []
+    target_window = None
+
+    # Filter visible clients on this workspace that are not off-screen / minimized
+    ws_clients = [
+        c for c in clients
+        if (active_ws_id is None or c.get("workspace", {}).get("id") == active_ws_id)
+        and c.get("mapped")
+        and not c.get("hidden")
+        and "minimized" not in c.get("tags", [])
+        and c.get("at", [0, 0])[0] < 40000
+    ]
+
+    # Sort floating windows higher than tiled
+    ws_clients.sort(key=lambda c: (1 if c.get("floating") else 0, c.get("focusHistoryID", 0)), reverse=True)
+
+    for c in ws_clients:
+        at = c.get("at", [0, 0])
+        size = c.get("size", [0, 0])
+        if at[0] <= cx <= at[0] + size[0] and at[1] <= cy <= at[1] + size[1]:
+            target_window = c
+            break
+
+    if target_window:
+        # User clicked on a window -> Minimize it
+        return cmd_minimize(target_window.get("address"))
+    else:
+        # User clicked on empty desktop / background -> Unhide / restore all!
+        living_state, _ = reconcile_state()
+        if living_state:
+            print("Desktop click detected -> Unhiding all minimized windows.")
+            return cmd_restore_all()
+        else:
+            print("Desktop click detected (no minimized windows to restore).")
+            return 0
+
+
+def cmd_list(as_json: bool = False) -> int:
+    """List all minimized windows grouped by application."""
+    living_state, _ = reconcile_state()
+    
+    if as_json:
+        print(json.dumps(living_state, indent=2))
+        return 0
+
+    if not living_state:
+        print("No minimized windows.")
+        return 0
+
+    # Group by class
+    groups: dict[str, list[dict]] = {}
+    for w in living_state:
+        cls = w.get("class") or "Unknown"
+        groups.setdefault(cls, []).append(w)
+
+    print(f"📦 Minimized Windows ({len(living_state)} total across {len(groups)} app group(s)):\n")
+    for cls, windows in groups.items():
+        print(f"  󰣆 {cls} ({len(windows)}):")
+        for w in windows:
+            ws = w.get("workspace", {}).get("name", "?")
+            title = w.get("title", "Untitled")
+            addr = w.get("address", "")
+            off_x, off_y = w.get("offscreen_at", [0, 0])
+            print(f"    • \"{title}\" [WS: {ws}] (addr: {addr}, offscreen: {off_x},{off_y})")
+        print()
+    return 0
+
+
+def cmd_status(as_json: bool = True) -> int:
+    """Return status summary for bar widgets and external services."""
+    living_state, _ = reconcile_state()
+    
+    groups_dict: dict[str, list[dict]] = {}
+    for w in living_state:
+        cls = w.get("class") or "window"
+        groups_dict.setdefault(cls, []).append(w)
+
+    group_list = []
+    for cls, wins in groups_dict.items():
+        group_list.append({
+            "class": cls,
+            "count": len(wins),
+            "icon": cls.lower(),
+            "windows": [
+                {
+                    "address": w.get("address"),
+                    "title": w.get("title"),
+                    "workspace": w.get("workspace", {}).get("name")
+                }
+                for w in wins
+            ]
+        })
+
+    status_data = {
+        "count": len(living_state),
+        "has_minimized": len(living_state) > 0,
+        "group_count": len(group_list),
+        "groups": group_list,
+        "windows": living_state
+    }
+
+    if as_json:
+        print(json.dumps(status_data))
+    else:
+        print(f"Minimized count: {len(living_state)}")
+    return 0
+
+
+def cmd_clean() -> int:
+    """Reconcile and prune state of any closed or dead windows."""
+    living, _ = reconcile_state()
+    print(f"Cleaned state. {len(living)} active minimized window(s) remaining.")
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Omarchy Window Minimize & Off-Screen Grouping CLI"
+    )
+    subparsers = parser.add_subparsers(dest="action")
+
+    # minimize
+    min_parser = subparsers.add_parser("minimize", help="Minimize active or specified window")
+    min_parser.add_argument("address", nargs="?", default=None, help="Window address (optional)")
+
+    # mouse-action / smart-click
+    subparsers.add_parser("mouse-action", help="Smart click: minimize window or unhide from desktop")
+    subparsers.add_parser("smart-click", help="Alias for mouse-action")
+
+    # restore-all
+    subparsers.add_parser("restore-all", help="Restore all minimized windows to their original workspaces")
+
+    # restore
+    res_parser = subparsers.add_parser("restore", help="Restore a specific window by address")
+    res_parser.add_argument("address", help="Window address (e.g. 0x557ac141fd10)")
+
+    # restore-last
+    subparsers.add_parser("restore-last", help="Restore the most recently minimized window")
+
+    # restore-app
+    app_parser = subparsers.add_parser("restore-app", help="Restore all windows for an application class")
+    app_parser.add_argument("app_class", help="Application class (e.g. zen-browser, ghostty)")
+
+    # list
+    list_parser = subparsers.add_parser("list", help="List all minimized windows")
+    list_parser.add_argument("--json", action="store_true", help="Output as JSON")
+
+    # status
+    status_parser = subparsers.add_parser("status", help="Output status summary")
+    status_parser.add_argument("--json", action="store_true", default=True, help="Output as JSON")
+
+    # clean
+    subparsers.add_parser("clean", help="Clean up state for closed windows")
+
+    args = parser.parse_args()
+
+    if not args.action or args.action == "minimize":
+        addr = getattr(args, "address", None)
+        sys.exit(cmd_minimize(addr))
+    elif args.action in ("mouse-action", "smart-click"):
+        sys.exit(cmd_smart_click())
+    elif args.action == "restore-all":
+        sys.exit(cmd_restore_all())
+    elif args.action == "restore":
+        sys.exit(cmd_restore_window(args.address))
+    elif args.action == "restore-last":
+        sys.exit(cmd_restore_last())
+    elif args.action == "restore-app":
+        sys.exit(cmd_restore_app(args.app_class))
+    elif args.action == "list":
+        sys.exit(cmd_list(args.json))
+    elif args.action == "status":
+        sys.exit(cmd_status(args.json))
+    elif args.action == "clean":
+        sys.exit(cmd_clean())
+    else:
+        parser.print_help()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,11 @@
+# Build artifacts
+*.o
+*.so
+hyprland-plugin/*.o
+hyprland-plugin/minimize-hook.so
+
+# Python cache & temp
+__pycache__/
+*.pyc
+*.tmp
+.cache/

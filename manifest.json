@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "azterisk.minimize",
+  "name": "Window Minimize",
+  "version": "1.0.0",
+  "author": "Azteriisk",
+  "description": "Off-screen application-grouped window minimization, quick status badge, and instant multi-workspace restoration for Hyprland",
+  "kinds": [
+    "bar-widget",
+    "service"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "barWidget": "BarWidget.qml",
+    "service": "Service.qml"
+  },
+  "barWidget": {
+    "displayName": "Window Minimize",
+    "description": "Minimized window badge indicator and quick-restore drawer",
+    "category": "Window Management",
+    "allowMultiple": false,
+    "defaults": {
+      "alwaysShow": false
+    },
+    "schema": [
+      {
+        "key": "alwaysShow",
+        "type": "boolean",
+        "label": "Always Show",
+        "description": "Keep indicator visible in bar even when 0 windows are minimized",
+        "defaultValue": false
+      }
+    ]
+  }
+}
