@@ -24,6 +24,63 @@ An intelligent window minimization, off-screen application grouping, CSD titleba
 | Super + Alt + M | Restore All Windows | Keyboard shortcut to restore all minimized windows back to their workspaces |
 | Super + Ctrl + M | Restore Last Window | Keyboard shortcut to restore the most recently minimized window (LIFO stack) |
 
+## Handling Tray Applications (Steam, Discord, Telegram, etc.)
+
+Certain applications have built-in minimize-to-tray functionality. When you click their minimize button, they internally hide their window and dock into the top bar system tray. If their titlebar click is intercepted and their window is moved off-screen, clicking their tray icon will un-hide the window in off-screen space rather than on your visible display.
+
+Steam (and Steam games) is already excluded from titlebar interception by default so its native tray docking works cleanly.
+
+### Adding Other Tray Applications
+
+If you use an application that manages its own minimize-to-tray behavior, you can add its window class to the ignore list using either of the two methods below.
+
+#### Method 1: Configuration File (No Recompilation Required)
+
+1. Find the window class of the running application:
+   ```bash
+   hyprctl activewindow -j | grep -i "class"
+   ```
+
+2. Add the class name to `~/.config/omarchy/minimize-ignored-apps.txt`:
+   ```bash
+   mkdir -p ~/.config/omarchy
+   cat << 'APPS' >> ~/.config/omarchy/minimize-ignored-apps.txt
+   # Applications that handle their own minimize-to-tray behavior
+   discord
+   vesktop
+   telegramdesktop
+   APPS
+   ```
+
+The C++ plugin hook reads this file automatically.
+
+#### Method 2: In C++ Source Code
+
+You can also add the application class directly into `hyprland-plugin/main.cpp` inside the `isNativeTrayApp` function:
+
+```cpp
+static bool isNativeTrayApp(PHLWINDOW pWindow) {
+    if (!pWindow)
+        return false;
+    std::string cls = pWindow->fetchClass();
+    std::transform(cls.begin(), cls.end(), cls.begin(), [](unsigned char c) { return std::tolower(c); });
+    
+    if (cls == "steam" || cls.rfind("steam_app_", 0) == 0 || cls == "discord" || cls == "telegramdesktop")
+        return true;
+
+    return false;
+}
+```
+
+Then recompile and reload the plugin:
+```bash
+make -C ~/.config/omarchy/plugins/azterisk.minimize/hyprland-plugin
+hyprctl plugin unload ~/.config/omarchy/plugins/azterisk.minimize/hyprland-plugin/minimize-hook.so
+hyprctl plugin load ~/.config/omarchy/plugins/azterisk.minimize/hyprland-plugin/minimize-hook.so
+```
+
+Note: Applications on this ignore list will still minimize via `Super + M` or `Super + Middle Click` if you choose to use the plugin shortcuts directly.
+
 ## Installation
 
 Run this command in your terminal to install and enable the plugin:

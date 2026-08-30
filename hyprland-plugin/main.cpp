@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <format>
+#include <fstream>
 #include <cstdlib>
 
 inline HANDLE PHANDLE = nullptr;
@@ -25,10 +26,24 @@ static bool isNativeTrayApp(PHLWINDOW pWindow) {
     std::transform(cls.begin(), cls.end(), cls.begin(), [](unsigned char c) { return std::tolower(c); });
     
     // Steam and Steam games handle their own window unmapping and tray minimization natively.
-    // Intercepting their titlebar clicks causes their window coordinates to be thrown to offscreen
-    // space while hidden in tray, making them inaccessible when clicking the tray icon.
     if (cls == "steam" || cls.rfind("steam_app_", 0) == 0)
         return true;
+
+    // Optional user-defined ignore list: ~/.config/omarchy/minimize-ignored-apps.txt
+    std::string configPath = os_getenv_or("HOME", "/home/azterisk") + "/.config/omarchy/minimize-ignored-apps.txt";
+    std::ifstream infile(configPath);
+    if (infile.is_open()) {
+        std::string line;
+        while (std::getline(infile, line)) {
+            line.erase(0, line.find_first_not_of(" \t\r\n"));
+            line.erase(line.find_last_not_of(" \t\r\n") + 1);
+            if (line.empty() || line[0] == '#')
+                continue;
+            std::transform(line.begin(), line.end(), line.begin(), [](unsigned char c) { return std::tolower(c); });
+            if (cls == line)
+                return true;
+        }
+    }
 
     return false;
 }
@@ -93,7 +108,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         .name = "azterisk.minimize-hook",
         .description = "Intercepts application CSD minimize button clicks and routes to omarchy-minimize",
         .author = "Azteriisk",
-        .version = "1.0.1",
+        .version = "1.0.2",
     };
 }
 
