@@ -7,6 +7,7 @@
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/managers/KeybindManager.hpp>
 
+#include <algorithm>
 #include <format>
 #include <cstdlib>
 
@@ -17,8 +18,23 @@ static std::string os_getenv_or(const char* name, const std::string& fallback) {
     return val ? std::string(val) : fallback;
 }
 
-static void triggerMinimize(PHLWINDOW pWindow) {
+static bool isNativeTrayApp(PHLWINDOW pWindow) {
     if (!pWindow)
+        return false;
+    std::string cls = pWindow->fetchClass();
+    std::transform(cls.begin(), cls.end(), cls.begin(), [](unsigned char c) { return std::tolower(c); });
+    
+    // Steam and Steam games handle their own window unmapping and tray minimization natively.
+    // Intercepting their titlebar clicks causes their window coordinates to be thrown to offscreen
+    // space while hidden in tray, making them inaccessible when clicking the tray icon.
+    if (cls == "steam" || cls.rfind("steam_app_", 0) == 0)
+        return true;
+
+    return false;
+}
+
+static void triggerMinimize(PHLWINDOW pWindow) {
+    if (!pWindow || isNativeTrayApp(pWindow))
         return;
 
     std::string addr = std::format("0x{:x}", (uintptr_t)pWindow.get());
@@ -32,7 +48,7 @@ static void triggerMinimize(PHLWINDOW pWindow) {
 }
 
 static void attachWindowListener(PHLWINDOW pWindow) {
-    if (!pWindow)
+    if (!pWindow || isNativeTrayApp(pWindow))
         return;
 
     if (pWindow->m_xdgSurface && pWindow->m_xdgSurface->m_toplevel) {
@@ -77,7 +93,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         .name = "azterisk.minimize-hook",
         .description = "Intercepts application CSD minimize button clicks and routes to omarchy-minimize",
         .author = "Azteriisk",
-        .version = "1.0.0",
+        .version = "1.0.1",
     };
 }
 

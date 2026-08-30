@@ -282,6 +282,12 @@ def cmd_restore_window(target_addr: str) -> int:
     dispatches.append(f'hl.dsp.window.tag({{ window = "address:{target_addr}", tag = "-min_grp_{tag_clean}" }})')
     dispatches.append(f'hl.dsp.focus({{ window = "address:{target_addr}" }})')
 
+    if (matched.get("class") or "").lower() == "steam":
+        try:
+            subprocess.Popen(["steam", "steam://open/main"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
     success = execute_hypr_batch(dispatches)
     if success:
         save_state(remaining)
@@ -336,6 +342,13 @@ def cmd_restore_all() -> int:
         dispatches.append(f'hl.dsp.focus({{ window = "address:{last_addr}" }})')
 
     success = execute_hypr_batch(dispatches)
+    if success:
+        has_steam = any((w.get("class") or "").lower() == "steam" for w in living_state)
+        if has_steam:
+            try:
+                subprocess.Popen(["steam", "steam://open/main"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
     if success:
         save_state([])
         print(f"Restored all {len(living_state)} minimized window(s).")
@@ -394,6 +407,13 @@ def cmd_restore_app(app_class: str) -> int:
         dispatches.append(f'hl.dsp.focus({{ window = "address:{last_addr}" }})')
 
     success = execute_hypr_batch(dispatches)
+    if success:
+        has_steam = any((w.get("class") or "").lower() == "steam" for w in living_state)
+        if has_steam:
+            try:
+                subprocess.Popen(["steam", "steam://open/main"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
     if success:
         save_state(remaining)
         print(f"Restored {len(matching)} window(s) for '{app_class}'.")
