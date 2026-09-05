@@ -90,9 +90,8 @@ static bool isNativeTrayApp(PHLWINDOW pWindow) {
 Then recompile and reload the plugin:
 ```bash
 make -C ~/.config/omarchy/plugins/azterisk.minimize/hyprland-plugin
-cp -f ~/.config/omarchy/plugins/azterisk.minimize/hyprland-plugin/minimize-hook.so ~/.config/omarchy/plugins/azterisk.minimize/hyprland-plugin/minimize-hook.live.so
-hyprctl plugin unload ~/.config/omarchy/plugins/azterisk.minimize/hyprland-plugin/minimize-hook.live.so
-hyprctl plugin load ~/.config/omarchy/plugins/azterisk.minimize/hyprland-plugin/minimize-hook.live.so
+hyprctl plugin unload ~/.config/omarchy/plugins/azterisk.minimize/hyprland-plugin/minimize-hook.so
+hyprctl plugin load ~/.config/omarchy/plugins/azterisk.minimize/hyprland-plugin/minimize-hook.so
 ```
 
 ---

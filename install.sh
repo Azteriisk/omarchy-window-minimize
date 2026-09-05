@@ -44,10 +44,7 @@ if [[ -d "$HOOK_DIR" ]]; then
   # Load into running Hyprland session
   if command -v hyprctl >/dev/null 2>&1; then
     hyprctl plugin unload "$HOOK_SO" >/dev/null 2>&1 || true
-    hyprctl plugin unload "$HOOK_DIR/minimize-hook.live.so" >/dev/null 2>&1 || true
-    hyprctl plugin unload "$HOOK_DIR/minimize-hook.1.1.0.so" >/dev/null 2>&1 || true
-    cp -f "$HOOK_SO" "$HOOK_DIR/minimize-hook.live.so"
-    hyprctl plugin load "$HOOK_DIR/minimize-hook.live.so" >/dev/null 2>&1 || hyprctl plugin load "$HOOK_SO" >/dev/null 2>&1 || true
+    hyprctl plugin load "$HOOK_SO" >/dev/null 2>&1 || true
     echo "  ✓ Loaded minimize-hook into Hyprland"
   fi
 fi
@@ -64,7 +61,7 @@ if [[ -f "$HYPR_AUTOSTART" ]]; then
     cat << 'AUTOSTART' >> "$HYPR_AUTOSTART"
 
 -- Load Window Minimize CSD Button Interceptor Hook
-local hook_so = (os.getenv("HOME") or "/home/azterisk") .. "/.config/omarchy/plugins/azterisk.minimize/hyprland-plugin/minimize-hook.live.so"
+local hook_so = (os.getenv("HOME") or "/home/azterisk") .. "/.config/omarchy/plugins/azterisk.minimize/hyprland-plugin/minimize-hook.so"
 o.exec_on_start("hyprctl plugin load " .. hook_so)
 AUTOSTART
     echo "  ✓ Registered plugin hook in $HYPR_AUTOSTART"

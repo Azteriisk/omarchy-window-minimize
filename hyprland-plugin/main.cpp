@@ -56,10 +56,6 @@ static bool isNativeTrayApp(PHLWINDOW pWindow) {
         return false;
     std::string cls = pWindow->fetchClass();
     std::transform(cls.begin(), cls.end(), cls.begin(), [](unsigned char c) { return std::tolower(c); });
-    
-    // Steam (steam, steamwebhelper, steam_app_*) and games manage tray minimization natively.
-    if (cls.find("steam") != std::string::npos)
-        return true;
 
     // Optional user-defined ignore list: ~/.config/omarchy/minimize-ignored-apps.txt
     std::string configPath = os_getenv_or("HOME", "/home/azterisk") + "/.config/omarchy/minimize-ignored-apps.txt";
@@ -97,8 +93,19 @@ static void triggerMinimize(PHLWINDOW pWindow) {
     if (isNative)
         return;
 
+    bool isMax = Fullscreen::controller()->isFullscreen(pWindow, Fullscreen::FSMODE_MAXIMIZED);
+    if (isMax) {
+        logMsg(std::format("triggerMinimize: unmaximizing 0x{:x} before moving off-screen", (uintptr_t)pWindow.get()));
+        Fullscreen::controller()->setFullscreenMode(pWindow, Fullscreen::FSMODE_NONE, std::nullopt, true);
+        if (pWindow->m_xwaylandSurface) {
+            auto xsurf = pWindow->m_xwaylandSurface.lock();
+            if (xsurf)
+                xsurf->m_maximized = false;
+        }
+    }
+
     std::string addr = std::format("0x{:x}", (uintptr_t)pWindow.get());
-    std::string cmd = os_getenv_or("HOME", "/home/azterisk") + "/.local/bin/omarchy-minimize minimize " + addr;
+    std::string cmd = os_getenv_or("HOME", "/home/azterisk") + "/.local/bin/omarchy-minimize minimize " + addr + (isMax ? " --was-maximized" : "");
     execDetached(cmd);
 }
 
@@ -191,9 +198,7 @@ static void attachWindowListener(PHLWINDOW pWindow) {
                     toplevel->m_state.requestsMinimize.reset();
                     logMsg(std::format("XDG stateChanged minimize request on 0x{:x} ({})",
                         (uintptr_t)win.get(), win->fetchClass()));
-                    if (!isNativeTrayApp(win)) {
-                        triggerMinimize(win);
-                    }
+                    triggerMinimize(win);
                 }
             });
         }
@@ -220,10 +225,18 @@ static void attachWindowListener(PHLWINDOW pWindow) {
                     xsurf->m_state.requestsMinimize.reset();
                     logMsg(std::format("XWayland stateChanged minimize request on 0x{:x} ({})",
                         (uintptr_t)win.get(), win->fetchClass()));
-                    if (!isNativeTrayApp(win)) {
-                        triggerMinimize(win);
-                    }
+                    triggerMinimize(win);
                 }
+            });
+
+            // Automatically restore minimized XWayland window if client requests activation (e.g. system tray click)
+            xsurf->m_events.activate.listenStatic([pw]() {
+                auto win = pw.lock();
+                if (!win)
+                    return;
+                std::string addr = std::format("0x{:x}", (uintptr_t)win.get());
+                std::string cmd = os_getenv_or("HOME", "/home/azterisk") + "/.local/bin/omarchy-minimize restore " + addr;
+                execDetached(cmd);
             });
         }
     }

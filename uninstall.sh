@@ -16,7 +16,6 @@ echo "🗑️ Uninstalling Omarchy Window Minimize plugin (azterisk.minimize)...
 # 1. Unload Hyprland plugin hook
 if command -v hyprctl >/dev/null 2>&1; then
   hyprctl plugin unload "$HOOK_SO" >/dev/null 2>&1 || true
-  hyprctl plugin unload "$PLUGIN_DIR/hyprland-plugin/minimize-hook.live.so" >/dev/null 2>&1 || true
   echo "  ✓ Unloaded minimize-hook from Hyprland"
 fi
 
