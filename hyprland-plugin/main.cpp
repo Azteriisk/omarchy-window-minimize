@@ -6,13 +6,17 @@
 #include <hyprland/src/protocols/XDGShell.hpp>
 #include <hyprland/src/xwayland/XSurface.hpp>
 #include <hyprland/src/Compositor.hpp>
-#include <hyprland/src/managers/KeybindManager.hpp>
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 
 #include <algorithm>
+#include <chrono>
+#include <cstdlib>
+#include <fcntl.h>
 #include <format>
 #include <fstream>
-#include <cstdlib>
+#include <string>
+#include <sys/wait.h>
+#include <unistd.h>
 
 inline HANDLE PHANDLE = nullptr;
 
@@ -21,14 +25,40 @@ static std::string os_getenv_or(const char* name, const std::string& fallback) {
     return val ? std::string(val) : fallback;
 }
 
+static void execDetached(const std::string& cmd) {
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Intermediate process
+        pid_t grandChild = fork();
+        if (grandChild == 0) {
+            // Detached worker process decoupled completely from compositor
+            setsid();
+            int devnull = open("/dev/null", O_RDWR);
+            if (devnull >= 0) {
+                dup2(devnull, STDIN_FILENO);
+                dup2(devnull, STDOUT_FILENO);
+                dup2(devnull, STDERR_FILENO);
+                close(devnull);
+            }
+            execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
+            _exit(127);
+        }
+        // Intermediate child exits immediately so grandchild is reparented to init
+        _exit(0);
+    }
+    if (pid > 0) {
+        waitpid(pid, nullptr, 0);
+    }
+}
+
 static bool isNativeTrayApp(PHLWINDOW pWindow) {
     if (!pWindow)
         return false;
     std::string cls = pWindow->fetchClass();
     std::transform(cls.begin(), cls.end(), cls.begin(), [](unsigned char c) { return std::tolower(c); });
     
-    // Steam and Steam games handle their own window unmapping and tray minimization natively.
-    if (cls == "steam" || cls.rfind("steam_app_", 0) == 0)
+    // Steam (steam, steamwebhelper, steam_app_*) and games manage tray minimization natively.
+    if (cls.find("steam") != std::string::npos)
         return true;
 
     // Optional user-defined ignore list: ~/.config/omarchy/minimize-ignored-apps.txt
@@ -50,18 +80,26 @@ static bool isNativeTrayApp(PHLWINDOW pWindow) {
     return false;
 }
 
+static void logMsg(const std::string& msg) {
+    std::ofstream ofs("/tmp/minimize-hook.log", std::ios::app);
+    if (ofs.is_open()) {
+        auto now = std::chrono::system_clock::now();
+        ofs << std::format("[{:%FT%T}] {}\n", now, msg);
+    }
+}
+
 static void triggerMinimize(PHLWINDOW pWindow) {
-    if (!pWindow || isNativeTrayApp(pWindow))
+    if (!pWindow)
+        return;
+
+    bool isNative = isNativeTrayApp(pWindow);
+    logMsg(std::format("triggerMinimize on 0x{:x} ({}), isNativeTrayApp={}", (uintptr_t)pWindow.get(), pWindow->fetchClass(), isNative));
+    if (isNative)
         return;
 
     std::string addr = std::format("0x{:x}", (uintptr_t)pWindow.get());
-    std::string cmd = os_getenv_or("HOME", "/home/azterisk") + "/.local/bin/omarchy-minimize minimize " + addr + " &";
-    
-    if (g_pKeybindManager && g_pKeybindManager->m_dispatchers.contains("exec")) {
-        g_pKeybindManager->m_dispatchers["exec"](cmd);
-    } else {
-        std::system(cmd.c_str());
-    }
+    std::string cmd = os_getenv_or("HOME", "/home/azterisk") + "/.local/bin/omarchy-minimize minimize " + addr;
+    execDetached(cmd);
 }
 
 static bool s_inMaximizeHandling = false;
@@ -73,24 +111,29 @@ static void triggerMaximize(PHLWINDOW pWindow, bool wantMaximize) {
     s_inMaximizeHandling = true;
 
     bool isMax = Fullscreen::controller()->isFullscreen(pWindow, Fullscreen::FSMODE_MAXIMIZED);
+    logMsg(std::format("triggerMaximize on 0x{:x} ({}): wantMaximize={}, isMaxCurrently={}",
+        (uintptr_t)pWindow.get(), pWindow->fetchClass(), wantMaximize, isMax));
 
-    // If currently maximized and client requests unmaximize (false), or requests toggle while already maximized:
-    if (isMax && (!wantMaximize || isMax)) {
-        // Restore / Unmaximize
-        Fullscreen::controller()->setFullscreenMode(pWindow, Fullscreen::FSMODE_NONE, Fullscreen::FSMODE_NONE, true);
-        if (pWindow->m_xwaylandSurface) {
-            auto xsurf = pWindow->m_xwaylandSurface.lock();
-            if (xsurf)
-                xsurf->m_maximized = false;
-        }
-    } else if (!isMax && wantMaximize) {
+    if (wantMaximize && !isMax) {
         // Maximize to workspace monocle area (respecting top bar and gaps)
-        Fullscreen::controller()->setFullscreenMode(pWindow, Fullscreen::FSMODE_MAXIMIZED, Fullscreen::FSMODE_MAXIMIZED, true);
+        logMsg(std::format("triggerMaximize: maximizing 0x{:x}", (uintptr_t)pWindow.get()));
+        Fullscreen::controller()->setFullscreenMode(pWindow, Fullscreen::FSMODE_MAXIMIZED, std::nullopt, true);
         if (pWindow->m_xwaylandSurface) {
             auto xsurf = pWindow->m_xwaylandSurface.lock();
             if (xsurf)
                 xsurf->m_maximized = true;
         }
+    } else if (!wantMaximize && isMax) {
+        // Restore / Unmaximize
+        logMsg(std::format("triggerMaximize: unmaximizing 0x{:x}", (uintptr_t)pWindow.get()));
+        Fullscreen::controller()->setFullscreenMode(pWindow, Fullscreen::FSMODE_NONE, std::nullopt, true);
+        if (pWindow->m_xwaylandSurface) {
+            auto xsurf = pWindow->m_xwaylandSurface.lock();
+            if (xsurf)
+                xsurf->m_maximized = false;
+        }
+    } else {
+        logMsg(std::format("triggerMaximize: no-op on 0x{:x} (already matches wantMaximize={})", (uintptr_t)pWindow.get(), wantMaximize));
     }
 
     s_inMaximizeHandling = false;
@@ -100,6 +143,7 @@ static void triggerClose(PHLWINDOW pWindow) {
     if (!pWindow)
         return;
 
+    logMsg(std::format("triggerClose on 0x{:x} ({})", (uintptr_t)pWindow.get(), pWindow->fetchClass()));
     pWindow->sendClose();
 }
 
@@ -124,6 +168,7 @@ static void attachWindowListener(PHLWINDOW pWindow) {
         return;
 
     WP<Desktop::View::CWindow> pw = pWindow;
+    logMsg(std::format("attachWindowListener on 0x{:x} ({})", (uintptr_t)pWindow.get(), pWindow->fetchClass()));
 
     if (pWindow->m_xdgSurface && pWindow->m_xdgSurface->m_toplevel) {
         auto toplevel = pWindow->m_xdgSurface->m_toplevel.lock();
@@ -132,13 +177,23 @@ static void attachWindowListener(PHLWINDOW pWindow) {
                 auto win = pw.lock();
                 if (!win)
                     return;
-                if (toplevel->m_state.requestsMinimize.value_or(false)) {
+                bool hasMax = toplevel->m_state.requestsMaximize.has_value();
+                bool reqMax = toplevel->m_state.requestsMaximize.value_or(false);
+                bool reqMin = toplevel->m_state.requestsMinimize.value_or(false);
+
+                if (hasMax) {
+                    toplevel->m_state.requestsMaximize.reset();
+                    toplevel->m_state.requestsMinimize.reset();
+                    logMsg(std::format("XDG stateChanged maximize request on 0x{:x} ({}): reqMax={}",
+                        (uintptr_t)win.get(), win->fetchClass(), reqMax));
+                    triggerMaximize(win, reqMax);
+                } else if (reqMin) {
+                    toplevel->m_state.requestsMinimize.reset();
+                    logMsg(std::format("XDG stateChanged minimize request on 0x{:x} ({})",
+                        (uintptr_t)win.get(), win->fetchClass()));
                     if (!isNativeTrayApp(win)) {
                         triggerMinimize(win);
                     }
-                }
-                if (toplevel->m_state.requestsMaximize.has_value()) {
-                    triggerMaximize(win, toplevel->m_state.requestsMaximize.value());
                 }
             });
         }
@@ -151,13 +206,23 @@ static void attachWindowListener(PHLWINDOW pWindow) {
                 auto win = pw.lock();
                 if (!win)
                     return;
-                if (xsurf->m_state.requestsMinimize.value_or(false)) {
+                bool hasMax = xsurf->m_state.requestsMaximize.has_value();
+                bool reqMax = xsurf->m_state.requestsMaximize.value_or(false);
+                bool reqMin = xsurf->m_state.requestsMinimize.value_or(false);
+
+                if (hasMax) {
+                    xsurf->m_state.requestsMaximize.reset();
+                    xsurf->m_state.requestsMinimize.reset();
+                    logMsg(std::format("XWayland stateChanged maximize request on 0x{:x} ({}): reqMax={}",
+                        (uintptr_t)win.get(), win->fetchClass(), reqMax));
+                    triggerMaximize(win, reqMax);
+                } else if (reqMin) {
+                    xsurf->m_state.requestsMinimize.reset();
+                    logMsg(std::format("XWayland stateChanged minimize request on 0x{:x} ({})",
+                        (uintptr_t)win.get(), win->fetchClass()));
                     if (!isNativeTrayApp(win)) {
                         triggerMinimize(win);
                     }
-                }
-                if (xsurf->m_state.requestsMaximize.has_value()) {
-                    triggerMaximize(win, xsurf->m_state.requestsMaximize.value());
                 }
             });
         }
@@ -194,12 +259,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     // Instant state cleanup when any window is closed/destroyed
     Event::bus()->m_events.window.destroy.listenStatic([](PHLWINDOWREF) {
-        std::string cmd = os_getenv_or("HOME", "/home/azterisk") + "/.local/bin/omarchy-minimize clean &";
-        if (g_pKeybindManager && g_pKeybindManager->m_dispatchers.contains("exec")) {
-            g_pKeybindManager->m_dispatchers["exec"](cmd);
-        } else {
-            std::system(cmd.c_str());
-        }
+        std::string cmd = os_getenv_or("HOME", "/home/azterisk") + "/.local/bin/omarchy-minimize clean";
+        execDetached(cmd);
     });
 
     // Custom dispatchers for keybindings and scripts
