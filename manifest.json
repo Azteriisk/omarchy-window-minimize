@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "id": "azterisk.minimize",
-  "name": "Window Minimize",
-  "version": "1.0.0",
+  "name": "Window Control & Minimize",
+  "version": "1.1.0",
   "author": "Azteriisk",
-  "description": "Off-screen application-grouped window minimization, quick status badge, and instant multi-workspace restoration for Hyprland",
+  "description": "Off-screen application-grouped window minimization, CSD maximize/close support, status badge, and instant multi-workspace restoration for Hyprland",
   "kinds": [
     "bar-widget",
     "service"

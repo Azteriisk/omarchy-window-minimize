@@ -1,8 +1,8 @@
 # Maintainer: Azteriisk <https://github.com/Azteriisk>
 pkgname=omarchy-plugin-window-minimize-git
-pkgver=1.0.0.r0.g515fec4
+pkgver=1.1.0.r0.g515fec4
 pkgrel=1
-pkgdesc="Window minimization, CSD titlebar interceptor hook, and quick status badge for Omarchy and Hyprland"
+pkgdesc="Window control, minimization, CSD titlebar interceptor hook, and status badge for Omarchy and Hyprland"
 arch=('x86_64')
 url="https://github.com/Azteriisk/omarchy-window-minimize"
 license=('MIT')

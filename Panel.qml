@@ -51,6 +51,11 @@ Panel {
     actionProc.running = true
   }
 
+  function closeWindow(addr) {
+    actionProc.command = ["bash", "-c", root.scriptPath + " close \"" + addr + "\""]
+    actionProc.running = true
+  }
+
   // --- Backend Processes ---
   Process {
     id: statusProc
@@ -316,12 +321,13 @@ Panel {
 
                         Row {
                           anchors.left: parent.left
-                          anchors.right: restoreWinBtn.left
+                          anchors.right: winActionBtns.left
                           anchors.rightMargin: Style.space(6)
                           anchors.verticalCenter: parent.verticalCenter
                           spacing: Style.space(8)
 
                           Rectangle {
+                            id: wsBadge
                             implicitWidth: wsText.implicitWidth + Style.space(8)
                             implicitHeight: Style.space(18)
                             color: Style.dimmed(root.bar.foreground, 0.85)
@@ -344,23 +350,40 @@ Panel {
                             font.family: root.bar.fontFamily
                             font.pixelSize: Style.font.caption
                             elide: Text.ElideRight
-                            width: winRow.width - wsText.width - Style.space(90)
+                            width: winRow.width - wsBadge.implicitWidth - Style.space(110)
                             anchors.verticalCenter: parent.verticalCenter
                           }
                         }
 
-                        Button {
-                          id: restoreWinBtn
+                        Row {
+                          id: winActionBtns
                           anchors.right: parent.right
                           anchors.verticalCenter: parent.verticalCenter
-                          text: "󰁌"
-                          fontSize: Style.font.caption
-                          foreground: root.bar.foreground
-                          fontFamily: root.bar.fontFamily
-                          bordered: true
-                          horizontalPadding: Style.space(8)
-                          verticalPadding: Style.space(2)
-                          onClicked: root.restoreWindow(winRow.modelData.address)
+                          spacing: Style.space(4)
+
+                          Button {
+                            id: restoreWinBtn
+                            text: "󰁌"
+                            fontSize: Style.font.caption
+                            foreground: root.bar.foreground
+                            fontFamily: root.bar.fontFamily
+                            bordered: true
+                            horizontalPadding: Style.space(6)
+                            verticalPadding: Style.space(2)
+                            onClicked: root.restoreWindow(winRow.modelData.address)
+                          }
+
+                          Button {
+                            id: closeWinBtn
+                            text: "󰅖"
+                            fontSize: Style.font.caption
+                            foreground: Style.dimmed(root.bar.foreground, 0.3)
+                            fontFamily: root.bar.fontFamily
+                            bordered: true
+                            horizontalPadding: Style.space(6)
+                            verticalPadding: Style.space(2)
+                            onClicked: root.closeWindow(winRow.modelData.address)
+                          }
                         }
                       }
                     }

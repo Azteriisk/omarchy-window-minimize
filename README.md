@@ -1,23 +1,26 @@
-# Omarchy Window Minimize Plugin (azterisk.minimize)
+# Omarchy Window Control & Minimize Plugin (azterisk.minimize)
 
-An intelligent window minimization, off-screen application grouping, CSD titlebar interceptor, and multi-workspace restoration plugin for Omarchy Linux and Hyprland.
+An intelligent window minimization, maximize control, off-screen application grouping, CSD titlebar interceptor, and multi-workspace restoration plugin for Omarchy Linux and Hyprland.
 
 ## Features
 
-- Off-Screen Application Clustering: When minimized, windows are moved to an uninhabited staging coordinate space (50000+, 50000+) outside physical displays, organized into horizontal columns by application class and vertically cascaded.
-- Native CSD Titlebar Minimize Button Interceptor: Includes a compiled Hyprland C++ plugin hook (minimize-hook.so) that intercepts xdg_toplevel.set_minimized signals from native Wayland and XWayland applications (including Electron, Antigravity IDE, VS Code, Chrome, Spotify, and Discord). Clicking the application minimize button minimizes the window.
-- Smart Mouse Actions: Middle-clicking while holding Super minimizes the window under the cursor. Middle-clicking while holding Super on empty desktop space, a window gap, or the top bar restores and unhides all minimized windows.
-- Multi-Workspace Restoration: Restores windows back to their original workspace, position, dimensions, floating versus tiled layout, and fullscreen state.
-- Zero Latency Hyprland Batch IPC: Uses atomic hyprctl batching and native hl.dsp Lua dispatches for sub-millisecond minimize and restore actions.
-- Native Hyprland Tagging: Automatically tags minimized windows with +minimized and +min_grp_<app_class> for Hyprland rules integration.
-- Top Bar Widget and Interactive Drawer: Displays a minimized window count indicator in the Omarchy status bar. Includes an interactive popup drawer listing minimized windows grouped by application with workspace tags, individual restore buttons, and a global Restore All button. Middle-clicking the bar icon restores the last minimized window; right-clicking restores all windows.
-- Auto-Reconciliation Daemon: Background service in omarchy-shell automatically purges state if a minimized window is closed or killed externally.
+- **Off-Screen Application Clustering**: When minimized, windows are moved to an uninhabited staging coordinate space (50000+, 50000+) outside physical displays, organized into horizontal columns by application class and vertically cascaded.
+- **Native CSD Titlebar Minimize Button Interceptor**: Intercepts `xdg_toplevel.set_minimized` and XWayland Iconic signals from native Wayland and XWayland applications (including Electron, Antigravity IDE, VS Code, Chrome, Spotify, and Discord). Clicking the application minimize button minimizes the window into the off-screen group.
+- **Native CSD Titlebar Maximize & Restore Interceptor**: Intercepts maximize requests from Wayland and XWayland applications (including Steam, Chromium, and Electron). Clicking the titlebar maximize button (`□`) toggles the window into Hyprland's `FSMODE_MAXIMIZED` (workarea monocle), cleanly expanding the window to fill the workspace while preserving the top bar and gaps, and restoring it when clicked again.
+- **Full Steam & Windows-Style UI Compatibility**: Handles Windows-style client-side decorations cleanly. Steam's Maximize (`□`) and Close (`✕`) buttons work seamlessly, while Steam's native minimize-to-tray behavior is preserved.
+- **Instant Close (X) Reconciliation**: Real-time cleanup when windows are closed or destroyed externally or via titlebar X buttons, plus dedicated Close actions directly in the CLI and UI drawer.
+- **Smart Mouse Actions**: Middle-clicking while holding Super minimizes the window under the cursor. Middle-clicking while holding Super on empty desktop space, a window gap, or the top bar restores and unhides all minimized windows.
+- **Multi-Workspace Restoration**: Restores windows back to their original workspace, position, dimensions, floating versus tiled layout, and fullscreen state.
+- **Zero Latency Hyprland Batch IPC**: Uses atomic hyprctl batching and native C++ plugin hooks for sub-millisecond minimize, maximize, and restore actions.
+- **Top Bar Widget and Interactive Drawer**: Displays a minimized window count indicator in the Omarchy status bar with individual restore and close buttons, group restores, and a global Restore All button.
 
 ## Shortcuts Reference
 
 | Shortcut | Action | Description |
 | :--- | :--- | :--- |
-| Titlebar Minimize Button | Minimize Window | Intercepted via Hyprland C++ hook; minimizes the window |
+| Titlebar Minimize Button (`_`) | Minimize Window | Intercepted via C++ hook; minimizes window into off-screen cluster |
+| Titlebar Maximize Button (`□`) | Maximize / Restore | Intercepted via C++ hook; toggles workarea maximize (`FSMODE_MAXIMIZED`) |
+| Titlebar Close Button (`✕`) | Close Window | Native client close with instant state purge |
 | Super + M | Minimize Window | Keyboard shortcut to move focused window off-screen |
 | Super + Middle Click (on Window) | Minimize Window | Middle-click any open window while holding Super to minimize it |
 | Super + Middle Click (on Desktop / Gap / Top Bar) | Restore All Windows | Middle-click empty desktop wallpaper, window gaps, or the top bar while holding Super to restore and unhide all minimized windows |
@@ -126,8 +129,17 @@ omarchy-minimize restore 0x557ac141fd10
 omarchy-minimize list
 omarchy-minimize list --json
 
-# Get status summary for bar widgets
-omarchy-minimize status
+# Maximize or toggle maximize for active window
+omarchy-minimize maximize
+
+# Maximize or toggle maximize for a specific window
+omarchy-minimize maximize 0x557ac141fd10
+
+# Close active window
+omarchy-minimize close
+
+# Close a specific window (safely purging from minimized cache if minimized)
+omarchy-minimize close 0x557ac141fd10
 
 # Reconcile state against currently living windows
 omarchy-minimize clean

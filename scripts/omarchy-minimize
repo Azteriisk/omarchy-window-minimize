@@ -563,6 +563,53 @@ def cmd_clean() -> int:
     return 0
 
 
+def cmd_maximize(target_addr: str | None = None) -> int:
+    """Toggle maximize state (monocle mode 1) for active or specified window."""
+    living_state, _ = reconcile_state()
+    if target_addr and not target_addr.startswith("0x"):
+        target_addr = "0x" + target_addr
+
+    # If the target window is currently minimized off-screen, restore it first
+    if target_addr and any(w.get("address") == target_addr for w in living_state):
+        cmd_restore_window(target_addr)
+
+    if target_addr:
+        dispatches = [
+            f'hl.dsp.focus({{ window = "address:{target_addr}" }})',
+            f'hl.dsp.window.fullscreen({{ window = "address:{target_addr}", mode = "maximized" }})'
+        ]
+    else:
+        dispatches = [
+            'hl.dsp.window.fullscreen({ mode = "maximized" })'
+        ]
+
+    success = execute_hypr_batch(dispatches)
+    return 0 if success else 1
+
+
+def cmd_close(target_addr: str | None = None) -> int:
+    """Close active or specified window, cleaning it from minimized state if needed."""
+    living_state, _ = reconcile_state()
+    if target_addr:
+        if not target_addr.startswith("0x"):
+            target_addr = "0x" + target_addr
+        remaining = [w for w in living_state if w.get("address") != target_addr]
+        if len(remaining) != len(living_state):
+            save_state(remaining)
+        dispatches = [f'hl.dsp.window.close({{ window = "address:{target_addr}" }})']
+    else:
+        active = get_hypr_json("activewindow")
+        if active and active.get("address"):
+            addr = active.get("address")
+            remaining = [w for w in living_state if w.get("address") != addr]
+            if len(remaining) != len(living_state):
+                save_state(remaining)
+        dispatches = ['hl.dsp.window.close()']
+
+    success = execute_hypr_batch(dispatches)
+    return 0 if success else 1
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Omarchy Window Minimize & Off-Screen Grouping CLI"
@@ -572,6 +619,16 @@ def main():
     # minimize
     min_parser = subparsers.add_parser("minimize", help="Minimize active or specified window")
     min_parser.add_argument("address", nargs="?", default=None, help="Window address (optional)")
+
+    # maximize / toggle-maximize
+    max_parser = subparsers.add_parser("maximize", help="Maximize or toggle maximize for active or specified window")
+    max_parser.add_argument("address", nargs="?", default=None, help="Window address (optional)")
+    tmax_parser = subparsers.add_parser("toggle-maximize", help="Alias for maximize")
+    tmax_parser.add_argument("address", nargs="?", default=None, help="Window address (optional)")
+
+    # close
+    close_parser = subparsers.add_parser("close", help="Close active or specified window")
+    close_parser.add_argument("address", nargs="?", default=None, help="Window address (optional)")
 
     # mouse-action / smart-click
     subparsers.add_parser("mouse-action", help="Smart click: minimize window or unhide from desktop")
@@ -607,6 +664,12 @@ def main():
     if not args.action or args.action == "minimize":
         addr = getattr(args, "address", None)
         sys.exit(cmd_minimize(addr))
+    elif args.action in ("maximize", "toggle-maximize"):
+        addr = getattr(args, "address", None)
+        sys.exit(cmd_maximize(addr))
+    elif args.action == "close":
+        addr = getattr(args, "address", None)
+        sys.exit(cmd_close(addr))
     elif args.action in ("mouse-action", "smart-click"):
         sys.exit(cmd_smart_click())
     elif args.action == "restore-all":

@@ -43,8 +43,12 @@ if [[ -d "$HOOK_DIR" ]]; then
   
   # Load into running Hyprland session
   if command -v hyprctl >/dev/null 2>&1; then
-    hyprctl plugin load "$HOOK_SO" >/dev/null 2>&1 || true
-    echo "  ✓ Loaded minimize-hook.so into Hyprland"
+    hyprctl plugin unload "$HOOK_SO" >/dev/null 2>&1 || true
+    hyprctl plugin unload "$HOOK_DIR/minimize-hook.live.so" >/dev/null 2>&1 || true
+    hyprctl plugin unload "$HOOK_DIR/minimize-hook.1.1.0.so" >/dev/null 2>&1 || true
+    cp -f "$HOOK_SO" "$HOOK_DIR/minimize-hook.live.so"
+    hyprctl plugin load "$HOOK_DIR/minimize-hook.live.so" >/dev/null 2>&1 || hyprctl plugin load "$HOOK_SO" >/dev/null 2>&1 || true
+    echo "  ✓ Loaded minimize-hook into Hyprland"
   fi
 fi
 
