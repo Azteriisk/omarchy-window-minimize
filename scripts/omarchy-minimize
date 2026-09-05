@@ -104,9 +104,13 @@ def reconcile_state() -> tuple[list[dict], list[dict]]:
         addr = item.get("address")
         if addr in client_map:
             live_win = client_map[addr]
-            if live_win.get("title"):
-                item["current_title"] = live_win["title"]
-            living.append(item)
+            at = live_win.get("at", [0, 0])
+            tags = live_win.get("tags", [])
+            # Window must be off-screen or tagged as minimized to be considered actively minimized
+            if at[0] >= 40000 or "minimized" in tags:
+                if live_win.get("title"):
+                    item["current_title"] = live_win["title"]
+                living.append(item)
     
     if len(living) != len(saved):
         save_state(living)
@@ -173,9 +177,8 @@ def cmd_minimize(target_addr: str | None = None, was_maximized: bool = False) ->
     floating = bool(target_win.get("floating", False))
     at = target_win.get("at", [0, 0])
     size = target_win.get("size", [800, 600])
-    fullscreen = target_win.get("fullscreen", 0)
-    if was_maximized:
-        fullscreen = 1
+    curr_fullscreen = target_win.get("fullscreen", 0)
+    saved_fullscreen = 1 if (was_maximized or curr_fullscreen == 1) else curr_fullscreen
     pinned = bool(target_win.get("pinned", False))
     monitor = target_win.get("monitor", 0)
 
@@ -196,7 +199,7 @@ def cmd_minimize(target_addr: str | None = None, was_maximized: bool = False) ->
         "floating": floating,
         "at": at,
         "size": size,
-        "fullscreen": fullscreen,
+        "fullscreen": saved_fullscreen,
         "pinned": pinned,
         "monitor": monitor,
         "offscreen_at": [dest_x, dest_y],
@@ -207,11 +210,14 @@ def cmd_minimize(target_addr: str | None = None, was_maximized: bool = False) ->
     # Prepare Lua dispatch commands
     dispatches = []
     
-    # 1. Un-fullscreen/un-maximize if needed so window can be moved off-screen
-    if fullscreen == 1:
-        dispatches.append(f'hl.dsp.window.fullscreen({{ window = "address:{target_addr}", mode = "maximized" }})')
-    elif fullscreen == 2:
-        dispatches.append(f'hl.dsp.window.fullscreen({{ window = "address:{target_addr}", mode = "fullscreen" }})')
+    # 1. Un-fullscreen/un-maximize if needed so window can be moved off-screen.
+    # If was_maximized is True, the C++ plugin hook has already unmaximized the window in Hyprland
+    # before invoking this script. Dispatching fullscreen here would toggle it BACK to maximized!
+    if not was_maximized:
+        if curr_fullscreen == 1:
+            dispatches.append(f'hl.dsp.window.fullscreen({{ window = "address:{target_addr}", mode = "maximized" }})')
+        elif curr_fullscreen == 2:
+            dispatches.append(f'hl.dsp.window.fullscreen({{ window = "address:{target_addr}", mode = "fullscreen" }})')
         
     # 2. Float if currently tiled
     if not floating:

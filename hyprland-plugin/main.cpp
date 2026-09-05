@@ -96,7 +96,7 @@ static void triggerMinimize(PHLWINDOW pWindow) {
     bool isMax = Fullscreen::controller()->isFullscreen(pWindow, Fullscreen::FSMODE_MAXIMIZED);
     if (isMax) {
         logMsg(std::format("triggerMinimize: unmaximizing 0x{:x} before moving off-screen", (uintptr_t)pWindow.get()));
-        Fullscreen::controller()->setFullscreenMode(pWindow, Fullscreen::FSMODE_NONE, std::nullopt, true);
+        Fullscreen::controller()->setFullscreenMode(pWindow, Fullscreen::FSMODE_NONE, Fullscreen::FSMODE_NONE, true);
         if (pWindow->m_xwaylandSurface) {
             auto xsurf = pWindow->m_xwaylandSurface.lock();
             if (xsurf)
@@ -124,7 +124,7 @@ static void triggerMaximize(PHLWINDOW pWindow, bool wantMaximize) {
     if (wantMaximize && !isMax) {
         // Maximize to workspace monocle area (respecting top bar and gaps)
         logMsg(std::format("triggerMaximize: maximizing 0x{:x}", (uintptr_t)pWindow.get()));
-        Fullscreen::controller()->setFullscreenMode(pWindow, Fullscreen::FSMODE_MAXIMIZED, std::nullopt, true);
+        Fullscreen::controller()->setFullscreenMode(pWindow, Fullscreen::FSMODE_MAXIMIZED, Fullscreen::FSMODE_MAXIMIZED, true);
         if (pWindow->m_xwaylandSurface) {
             auto xsurf = pWindow->m_xwaylandSurface.lock();
             if (xsurf)
@@ -133,7 +133,7 @@ static void triggerMaximize(PHLWINDOW pWindow, bool wantMaximize) {
     } else if (!wantMaximize && isMax) {
         // Restore / Unmaximize
         logMsg(std::format("triggerMaximize: unmaximizing 0x{:x}", (uintptr_t)pWindow.get()));
-        Fullscreen::controller()->setFullscreenMode(pWindow, Fullscreen::FSMODE_NONE, std::nullopt, true);
+        Fullscreen::controller()->setFullscreenMode(pWindow, Fullscreen::FSMODE_NONE, Fullscreen::FSMODE_NONE, true);
         if (pWindow->m_xwaylandSurface) {
             auto xsurf = pWindow->m_xwaylandSurface.lock();
             if (xsurf)
