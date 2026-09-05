@@ -38,13 +38,14 @@ An intelligent window minimization, maximize control, off-screen application gro
 
 Certain applications have built-in minimize-to-tray functionality. When you click their minimize button, they internally hide their window and dock into the top bar system tray.
 
-### How Tray Applications Work in v1.1.0:
-- **Titlebar Minimize (`_`)**: Scoped specifically to minimize. When clicking Minimize (`_`) in Steam, Discord, or configured tray apps, the plugin lets the application dock into the system tray natively.
-- **Titlebar Maximize (`□`) & Close (`✕`)**: Fully functional! In Steam, clicking Maximize (`□`) expands the window into Hyprland's workarea monocle mode (`FSMODE_MAXIMIZED`) while keeping Omarchy gaps and the top status bar visible, and toggles the titlebar icon between Maximize and Restore. Clicking Close (`✕`) unmaps the window and immediately purges it from any cache.
+### How Steam & Tray Applications Work in v1.1.0:
+- **Steam Titlebar Minimize (`_`)**: When clicking Minimize (`_`) in Steam, the window cleanly unmaximizes if needed and moves off-screen into the Omarchy minimize drawer (`50000, 50000`). If minimized while maximized, restoring it returns it directly to its maximized monocle layout.
+- **Steam Titlebar Maximize (`□`) & Restore (`❐`)**: Fully functional! Clicking Maximize (`□`) expands the window into Hyprland's workarea monocle mode (`FSMODE_MAXIMIZED`) while keeping Omarchy gaps and the top status bar visible, and toggles the titlebar icon between Maximize and Restore.
+- **Steam Titlebar Close (`✕`)**: Fully functional! Clicking Close (`✕`) closes the window cleanly and automatically purges any cached state.
+- **Tray Activation**: Clicking Steam's tray icon or running `steam` automatically unhides/restores the window from the minimized drawer.
 
-Steam (including `steam`, `steamwebhelper`, and `steam_app_*`) is natively recognized by default.
-
-### Adding Other Tray Applications
+### Optional Tray Ignore List
+If you have other applications (like Discord or Telegram) that you prefer to manage their own minimize-to-tray behavior without the Omarchy drawer, you can add their window class to `~/.config/omarchy/minimize-ignored-apps.txt`.
 
 If you use an application that manages its own minimize-to-tray behavior, you can add its window class to the ignore list using either method below.
 
