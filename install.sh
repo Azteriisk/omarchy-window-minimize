@@ -60,11 +60,11 @@ echo "  ✓ Symlinked omarchy-minimize to $CLI_TARGET"
 
 # 3. Register autostart hook in autostart.lua
 if [[ -f "$HYPR_AUTOSTART" ]]; then
-  if ! grep -q "minimize-hook.so" "$HYPR_AUTOSTART"; then
+  if ! grep -q "minimize-hook" "$HYPR_AUTOSTART"; then
     cat << 'AUTOSTART' >> "$HYPR_AUTOSTART"
 
 -- Load Window Minimize CSD Button Interceptor Hook
-local hook_so = (os.getenv("HOME") or "/home/azterisk") .. "/.config/omarchy/plugins/azterisk.minimize/hyprland-plugin/minimize-hook.so"
+local hook_so = (os.getenv("HOME") or "/home/azterisk") .. "/.config/omarchy/plugins/azterisk.minimize/hyprland-plugin/minimize-hook.live.so"
 o.exec_on_start("hyprctl plugin load " .. hook_so)
 AUTOSTART
     echo "  ✓ Registered plugin hook in $HYPR_AUTOSTART"

@@ -14,9 +14,10 @@ HOOK_SO="$PLUGIN_DIR/hyprland-plugin/minimize-hook.so"
 echo "🗑️ Uninstalling Omarchy Window Minimize plugin (azterisk.minimize)..."
 
 # 1. Unload Hyprland plugin hook
-if command -v hyprctl >/dev/null 2>&1 && [[ -f "$HOOK_SO" ]]; then
+if command -v hyprctl >/dev/null 2>&1; then
   hyprctl plugin unload "$HOOK_SO" >/dev/null 2>&1 || true
-  echo "  ✓ Unloaded minimize-hook.so from Hyprland"
+  hyprctl plugin unload "$PLUGIN_DIR/hyprland-plugin/minimize-hook.live.so" >/dev/null 2>&1 || true
+  echo "  ✓ Unloaded minimize-hook from Hyprland"
 fi
 
 # 2. Remove symlink
@@ -27,7 +28,7 @@ fi
 
 # 3. Clean autostart.lua
 if [[ -f "$HYPR_AUTOSTART" ]]; then
-  sed -i '/minimize-hook.so/d' "$HYPR_AUTOSTART"
+  sed -i '/minimize-hook/d' "$HYPR_AUTOSTART"
   sed -i '/Load Window Minimize CSD Button Interceptor Hook/d' "$HYPR_AUTOSTART"
   echo "  ✓ Removed plugin hook from $HYPR_AUTOSTART"
 fi
