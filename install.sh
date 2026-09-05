@@ -3,16 +3,37 @@
 
 set -euo pipefail
 
-PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PLUGIN_ID="azterisk.minimize"
+PLUGINS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins"
+TARGET_DIR="$PLUGINS_DIR/$PLUGIN_ID"
 BIN_DIR="$HOME/.local/bin"
 CLI_TARGET="$BIN_DIR/omarchy-minimize"
 HYPR_BINDINGS="$HOME/.config/hypr/bindings.lua"
 HYPR_AUTOSTART="$HOME/.config/hypr/autostart.lua"
 SHELL_JSON="$HOME/.config/omarchy/shell.json"
-HOOK_DIR="$PLUGIN_DIR/hyprland-plugin"
-HOOK_SO="$HOOK_DIR/minimize-hook.so"
 
-echo "📦 Installing Omarchy Window Minimize plugin (azterisk.minimize)..."
+echo "📦 Installing Omarchy Window Minimize plugin ($PLUGIN_ID)..."
+
+# Ensure plugins directory exists
+mkdir -p "$PLUGINS_DIR"
+
+# If script is run from a cloned folder outside plugins dir, copy files
+if [ "$SCRIPT_DIR" != "$TARGET_DIR" ]; then
+  mkdir -p "$TARGET_DIR"
+  cp -a "$SCRIPT_DIR/manifest.json" \
+        "$SCRIPT_DIR/BarWidget.qml" \
+        "$SCRIPT_DIR/Panel.qml" \
+        "$SCRIPT_DIR/Service.qml" \
+        "$SCRIPT_DIR/scripts" \
+        "$SCRIPT_DIR/hyprland-plugin" \
+        "$SCRIPT_DIR/install.sh" \
+        "$SCRIPT_DIR/uninstall.sh" \
+        "$SCRIPT_DIR/README.md" "$TARGET_DIR/"
+fi
+
+HOOK_DIR="$TARGET_DIR/hyprland-plugin"
+HOOK_SO="$HOOK_DIR/minimize-hook.so"
 
 # 1. Build Hyprland C++ CSD Minimize Hook if needed
 if [[ -d "$HOOK_DIR" ]]; then
@@ -28,9 +49,9 @@ if [[ -d "$HOOK_DIR" ]]; then
 fi
 
 # 2. Ensure scripts are executable & symlink CLI
-chmod +x "$PLUGIN_DIR/scripts/omarchy-minimize"
+chmod +x "$TARGET_DIR/scripts/omarchy-minimize"
 mkdir -p "$BIN_DIR"
-ln -sf "$PLUGIN_DIR/scripts/omarchy-minimize" "$CLI_TARGET"
+ln -sf "$TARGET_DIR/scripts/omarchy-minimize" "$CLI_TARGET"
 echo "  ✓ Symlinked omarchy-minimize to $CLI_TARGET"
 
 # 3. Register autostart hook in autostart.lua
