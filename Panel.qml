@@ -10,12 +10,16 @@ Panel {
   id: root
   moduleName: "azterisk.minimize"
   ipcTarget: "azterisk.minimize"
-  manageIpc: false
+  manageIpc: true
 
   property int minimizedCount: 0
   property bool hasMinimized: false
   property var groups: []
   property var allWindows: []
+
+  readonly property color foreground: bar ? bar.foreground : Color.foreground
+  readonly property color urgent: bar ? bar.urgent : Color.urgent
+  readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   readonly property string scriptPath: Quickshell.env("HOME") + "/.config/omarchy/plugins/azterisk.minimize/scripts/omarchy-minimize"
   readonly property bool alwaysShow: setting("alwaysShow", false) === true
@@ -26,37 +30,36 @@ Panel {
     }
   }
 
+  function runScript(args) {
+    Quickshell.execDetached(["bash", "-c", root.scriptPath + " " + args])
+    refreshTimer.restart()
+  }
+
   function restoreAll() {
-    actionProc.command = ["bash", "-c", root.scriptPath + " restore-all"]
-    actionProc.running = true
+    runScript("restore-all")
   }
 
   function restoreLast() {
-    actionProc.command = ["bash", "-c", root.scriptPath + " restore-last"]
-    actionProc.running = true
+    runScript("restore-last")
   }
 
   function restoreApp(appClass) {
-    actionProc.command = ["bash", "-c", root.scriptPath + " restore-app \"" + appClass + "\""]
-    actionProc.running = true
+    runScript("restore-app " + Util.shellQuote(appClass))
   }
 
   function restoreWindow(addr) {
-    actionProc.command = ["bash", "-c", root.scriptPath + " restore \"" + addr + "\""]
-    actionProc.running = true
+    runScript("restore " + Util.shellQuote(addr))
   }
 
   function minimizeFocused() {
-    actionProc.command = ["bash", "-c", root.scriptPath + " minimize"]
-    actionProc.running = true
+    runScript("minimize")
   }
 
   function closeWindow(addr) {
-    actionProc.command = ["bash", "-c", root.scriptPath + " close \"" + addr + "\""]
-    actionProc.running = true
+    runScript("close " + Util.shellQuote(addr))
   }
 
-  // --- Backend Processes ---
+  // --- Backend Process ---
   Process {
     id: statusProc
     command: ["bash", "-c", root.scriptPath + " status --json"]
@@ -74,11 +77,11 @@ Panel {
     }
   }
 
-  Process {
-    id: actionProc
-    onExited: {
-      root.refresh()
-    }
+  Timer {
+    id: refreshTimer
+    interval: 200
+    repeat: false
+    onTriggered: root.refresh()
   }
 
   Timer {
@@ -108,7 +111,7 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.hasMinimized ? ("󰖰 " + root.minimizedCount) : "󰖰"
+    text: "󰖰"
     active: root.hasMinimized
     tooltipText: root.hasMinimized ? (root.minimizedCount + " minimized window(s) (Super+Alt+M to restore all)") : "No minimized windows (Super+M to minimize)"
     onPressed: function(b) {
@@ -143,6 +146,11 @@ Panel {
         clip: true
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         ScrollBar.vertical.policy: panelColumn.implicitHeight > height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+        Binding {
+          target: scrollArea.contentItem
+          property: "interactive"
+          value: panelColumn.implicitHeight > scrollArea.height
+        }
 
         Column {
           id: panelColumn
@@ -157,8 +165,8 @@ Panel {
             Text {
               id: heroIcon
               text: "󰖰"
-              color: root.hasMinimized ? Color.urgent : root.bar.foreground
-              font.family: root.bar.fontFamily
+              color: root.hasMinimized ? root.urgent : root.foreground
+              font.family: root.fontFamily
               font.pixelSize: Style.font.display
               anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
@@ -175,8 +183,8 @@ Panel {
 
               Text {
                 text: "Minimized Windows"
-                color: root.bar.foreground
-                font.family: root.bar.fontFamily
+                color: root.foreground
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.title
                 font.bold: true
               }
@@ -185,8 +193,8 @@ Panel {
                 text: root.hasMinimized
                   ? (root.minimizedCount + " window" + (root.minimizedCount === 1 ? "" : "s") + " across " + root.groups.length + " group" + (root.groups.length === 1 ? "" : "s"))
                   : "No windows currently minimized"
-                color: Style.dimmed(root.bar.foreground, 0.4)
-                font.family: root.bar.fontFamily
+                color: Util.alpha(root.foreground, 0.6)
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
               }
             }
@@ -197,8 +205,8 @@ Panel {
               anchors.verticalCenter: parent.verticalCenter
               text: "Restore All"
               fontSize: Style.font.caption
-              foreground: root.bar.foreground
-              fontFamily: root.bar.fontFamily
+              foreground: root.foreground
+              fontFamily: root.fontFamily
               active: root.hasMinimized
               bordered: true
               visible: root.hasMinimized
@@ -210,7 +218,7 @@ Panel {
           }
 
           PanelSeparator {
-            foreground: root.bar.foreground
+            foreground: root.foreground
           }
 
           // ---------- Minimized App Groups ----------
@@ -232,9 +240,9 @@ Panel {
                   id: groupCard
                   width: parent.width
                   implicitHeight: groupInnerColumn.implicitHeight + Style.space(16)
-                  color: Style.hoverFillFor(root.bar.foreground, Color.surface)
-                  radius: Style.rounding.panelCard
-                  border.color: Style.dimmed(root.bar.foreground, 0.8)
+                  color: Style.hoverFillFor(root.foreground, Color.accent, Color.urgent)
+                  radius: Style.cornerRadius
+                  border.color: Util.alpha(root.foreground, 0.2)
                   border.width: 1
 
                   Column {
@@ -259,15 +267,15 @@ Panel {
                         Text {
                           text: "󰣆"
                           color: Color.accent
-                          font.family: root.bar.fontFamily
+                          font.family: root.fontFamily
                           font.pixelSize: Style.font.body
                           anchors.verticalCenter: parent.verticalCenter
                         }
 
                         Text {
                           text: groupItem.modelData.class.toUpperCase()
-                          color: root.bar.foreground
-                          font.family: root.bar.fontFamily
+                          color: root.foreground
+                          font.family: root.fontFamily
                           font.pixelSize: Style.font.body
                           font.bold: true
                           anchors.verticalCenter: parent.verticalCenter
@@ -276,17 +284,17 @@ Panel {
                         Rectangle {
                           implicitWidth: groupCountText.implicitWidth + Style.space(10)
                           implicitHeight: Style.space(18)
-                          color: Style.selectedFillFor(root.bar.foreground, Color.accent)
-                          radius: Style.rounding.subtle
+                          color: Util.alpha(Color.accent, 0.2)
+                          radius: Math.max(2, Math.round(Style.cornerRadius / 2))
                           anchors.verticalCenter: parent.verticalCenter
 
                           Text {
                             id: groupCountText
                             anchors.centerIn: parent
                             text: groupItem.modelData.count + ""
-                            color: root.bar.foreground
-                            font.family: root.bar.fontFamily
-                            font.pixelSize: Style.font.small
+                            color: root.foreground
+                            font.family: root.fontFamily
+                            font.pixelSize: Style.font.bodySmall
                             font.bold: true
                           }
                         }
@@ -297,9 +305,9 @@ Panel {
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
                         text: "Restore Group"
-                        fontSize: Style.font.small
-                        foreground: root.bar.foreground
-                        fontFamily: root.bar.fontFamily
+                        fontSize: Style.font.caption
+                        foreground: root.foreground
+                        fontFamily: root.fontFamily
                         bordered: true
                         horizontalPadding: Style.space(8)
                         verticalPadding: Style.space(3)
@@ -317,7 +325,7 @@ Panel {
                         width: parent.width
                         implicitHeight: Style.space(32)
                         color: "transparent"
-                        radius: Style.rounding.subtle
+                        radius: Math.max(2, Math.round(Style.cornerRadius / 2))
 
                         Row {
                           anchors.left: parent.left
@@ -330,27 +338,27 @@ Panel {
                             id: wsBadge
                             implicitWidth: wsText.implicitWidth + Style.space(8)
                             implicitHeight: Style.space(18)
-                            color: Style.dimmed(root.bar.foreground, 0.85)
-                            radius: Style.rounding.subtle
+                            color: Util.alpha(root.foreground, 0.15)
+                            radius: Math.max(2, Math.round(Style.cornerRadius / 2))
                             anchors.verticalCenter: parent.verticalCenter
 
                             Text {
                               id: wsText
                               anchors.centerIn: parent
                               text: "WS " + (winRow.modelData.workspace || "1")
-                              color: Style.dimmed(root.bar.foreground, 0.3)
-                              font.family: root.bar.fontFamily
-                              font.pixelSize: Style.font.small
+                              color: Util.alpha(root.foreground, 0.7)
+                              font.family: root.fontFamily
+                              font.pixelSize: Style.font.bodySmall
                             }
                           }
 
                           Text {
                             text: winRow.modelData.title || "Untitled"
-                            color: root.bar.foreground
-                            font.family: root.bar.fontFamily
+                            color: root.foreground
+                            font.family: root.fontFamily
                             font.pixelSize: Style.font.caption
                             elide: Text.ElideRight
-                            width: winRow.width - wsBadge.implicitWidth - Style.space(110)
+                            width: winRow.width - wsBadge.implicitWidth - winActionBtns.width - Style.space(24)
                             anchors.verticalCenter: parent.verticalCenter
                           }
                         }
@@ -365,8 +373,8 @@ Panel {
                             id: restoreWinBtn
                             text: "󰁌"
                             fontSize: Style.font.caption
-                            foreground: root.bar.foreground
-                            fontFamily: root.bar.fontFamily
+                            foreground: root.foreground
+                            fontFamily: root.fontFamily
                             bordered: true
                             horizontalPadding: Style.space(6)
                             verticalPadding: Style.space(2)
@@ -377,8 +385,8 @@ Panel {
                             id: closeWinBtn
                             text: "󰅖"
                             fontSize: Style.font.caption
-                            foreground: Style.dimmed(root.bar.foreground, 0.3)
-                            fontFamily: root.bar.fontFamily
+                            foreground: Util.alpha(root.foreground, 0.7)
+                            fontFamily: root.fontFamily
                             bordered: true
                             horizontalPadding: Style.space(6)
                             verticalPadding: Style.space(2)
@@ -410,16 +418,16 @@ Panel {
                 Text {
                   anchors.horizontalCenter: parent.horizontalCenter
                   text: "󰖲 No windows minimized"
-                  color: Style.dimmed(root.bar.foreground, 0.4)
-                  font.family: root.bar.fontFamily
+                  color: Util.alpha(root.foreground, 0.6)
+                  font.family: root.fontFamily
                   font.pixelSize: Style.font.body
                 }
 
                 Text {
                   anchors.horizontalCenter: parent.horizontalCenter
                   text: "Press Super+M to minimize any active window"
-                  color: Style.dimmed(root.bar.foreground, 0.6)
-                  font.family: root.bar.fontFamily
+                  color: Util.alpha(root.foreground, 0.4)
+                  font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
                 }
               }
@@ -428,7 +436,7 @@ Panel {
 
           // ---------- Shortcuts Footer ----------
           PanelSeparator {
-            foreground: root.bar.foreground
+            foreground: root.foreground
           }
 
           Row {
@@ -437,22 +445,22 @@ Panel {
 
             Text {
               text: "󰌌 Super+M : Minimize"
-              color: Style.dimmed(root.bar.foreground, 0.5)
-              font.family: root.bar.fontFamily
-              font.pixelSize: Style.font.small
+              color: Util.alpha(root.foreground, 0.5)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
             }
 
             Text {
               text: "•"
-              color: Style.dimmed(root.bar.foreground, 0.7)
-              font.pixelSize: Style.font.small
+              color: Util.alpha(root.foreground, 0.3)
+              font.pixelSize: Style.font.bodySmall
             }
 
             Text {
               text: "Super+Alt+M : Restore All"
-              color: Style.dimmed(root.bar.foreground, 0.5)
-              font.family: root.bar.fontFamily
-              font.pixelSize: Style.font.small
+              color: Util.alpha(root.foreground, 0.5)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
             }
           }
         }
