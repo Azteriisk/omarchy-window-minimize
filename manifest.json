@@ -4,6 +4,7 @@
   "name": "Window Control & Minimize",
   "version": "1.1.0",
   "author": "Azteriisk",
+  "license": "MIT",
   "description": "Off-screen application-grouped window minimization, CSD maximize/close support, status badge, and instant multi-workspace restoration for Hyprland",
   "kinds": [
     "bar-widget",
