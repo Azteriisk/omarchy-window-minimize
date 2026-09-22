@@ -1,0 +1,20 @@
+pkgbase = omarchy-plugin-window-minimize-git
+	pkgdesc = Window control, minimization, CSD titlebar interceptor hook, and status badge for Omarchy and Hyprland
+	pkgver = 1.1.0
+	pkgrel = 1
+	url = https://github.com/Azteriisk/omarchy-window-minimize
+	arch = x86_64
+	license = MIT
+	makedepends = git
+	makedepends = gcc
+	makedepends = make
+	makedepends = pkgconf
+	makedepends = hyprland-headers
+	depends = hyprland
+	depends = quickshell
+	provides = omarchy-plugin-window-minimize
+	conflicts = omarchy-plugin-window-minimize
+	source = omarchy-plugin-window-minimize-git::git+https://github.com/Azteriisk/omarchy-window-minimize.git#commit=687eb594e5d1030ea6501fdc496ef3c7db8bc696
+	sha256sums = SKIP
+
+pkgname = omarchy-plugin-window-minimize-git

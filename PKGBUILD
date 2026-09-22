@@ -1,6 +1,6 @@
 # Maintainer: Azteriisk <https://github.com/Azteriisk>
 pkgname=omarchy-plugin-window-minimize-git
-pkgver=1.1.0.r0.g515fec4
+pkgver=1.1.0
 pkgrel=1
 pkgdesc="Window control, minimization, CSD titlebar interceptor hook, and status badge for Omarchy and Hyprland"
 arch=('x86_64')
@@ -10,21 +10,26 @@ depends=('hyprland' 'quickshell')
 makedepends=('git' 'gcc' 'make' 'pkgconf' 'hyprland-headers')
 provides=('omarchy-plugin-window-minimize')
 conflicts=('omarchy-plugin-window-minimize')
-source=("git+https://github.com/Azteriisk/omarchy-window-minimize.git")
-md5sums=('SKIP')
+_commit="687eb594e5d1030ea6501fdc496ef3c7db8bc696"
+source=("${pkgname}::git+https://github.com/Azteriisk/omarchy-window-minimize.git#commit=${_commit}")
+sha256sums=('SKIP')
 
 pkgver() {
-  cd "$srcdir/omarchy-window-minimize"
-  printf "1.1.0.r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+  cd "$srcdir/${pkgname}"
+  if tag=$(git describe --long --tags --abbrev=7 2>/dev/null); then
+    echo "$tag" | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+  else
+    printf "1.1.0.r%s.%s\n" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+  fi
 }
 
 build() {
-  cd "$srcdir/omarchy-window-minimize/hyprland-plugin"
+  cd "$srcdir/${pkgname}/hyprland-plugin"
   make
 }
 
 package() {
-  cd "$srcdir/omarchy-window-minimize"
+  cd "$srcdir/${pkgname}"
 
   # 1. Install CLI helper to /usr/bin
   install -Dm755 scripts/omarchy-minimize "$pkgdir/usr/bin/omarchy-minimize"
@@ -43,4 +48,6 @@ package() {
   install -Dm755 hyprland-plugin/minimize-hook.so "$pkgdir/usr/lib/hyprland/minimize-hook.so"
   install -d "$pkgdir/usr/share/omarchy/plugins/azterisk.minimize/hyprland-plugin"
   install -Dm755 hyprland-plugin/minimize-hook.so "$pkgdir/usr/share/omarchy/plugins/azterisk.minimize/hyprland-plugin/minimize-hook.so"
+
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
