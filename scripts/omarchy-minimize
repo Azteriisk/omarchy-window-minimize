@@ -23,6 +23,14 @@ GROUP_OFFSET_X = 2500
 WINDOW_OFFSET_Y = 150
 
 
+def clamp_text(val: str | None, max_len: int = 128) -> str:
+    """Clamps string to max length and strips non-printable / control characters."""
+    if not val:
+        return ""
+    clean = re.sub(r"[\r\n\x00-\x1f\x7f-\x9f]", " ", str(val)).strip()
+    return clean[:max_len]
+
+
 def run_hyprctl(args: list[str]) -> tuple[int, str]:
     """Execute hyprctl with args and return (code, stdout)."""
     try:
@@ -109,7 +117,7 @@ def reconcile_state() -> tuple[list[dict], list[dict]]:
             # Window must be off-screen or tagged as minimized to be considered actively minimized
             if at[0] >= 40000 or "minimized" in tags:
                 if live_win.get("title"):
-                    item["current_title"] = live_win["title"]
+                    item["current_title"] = clamp_text(live_win["title"], 128)
                 living.append(item)
     
     if len(living) != len(saved):
@@ -189,12 +197,12 @@ def cmd_minimize(target_addr: str | None = None, was_maximized: bool = False) ->
 
     window_record = {
         "address": target_addr,
-        "class": app_class,
-        "initialClass": target_win.get("initialClass", app_class),
-        "title": title,
+        "class": clamp_text(app_class, 64) or "window",
+        "initialClass": clamp_text(target_win.get("initialClass", app_class), 64),
+        "title": clamp_text(title, 128) or "Untitled",
         "workspace": {
             "id": ws_id,
-            "name": ws_name
+            "name": clamp_text(ws_name, 32)
         },
         "floating": floating,
         "at": at,
@@ -543,15 +551,16 @@ def cmd_status(as_json: bool = True) -> int:
 
     group_list = []
     for cls, wins in groups_dict.items():
+        clean_cls = clamp_text(cls, 64) or "window"
         group_list.append({
-            "class": cls,
+            "class": clean_cls,
             "count": len(wins),
-            "icon": cls.lower(),
+            "icon": clean_cls.lower(),
             "windows": [
                 {
                     "address": w.get("address"),
-                    "title": w.get("title"),
-                    "workspace": w.get("workspace", {}).get("name")
+                    "title": clamp_text(w.get("title"), 128) or "Untitled",
+                    "workspace": clamp_text(w.get("workspace", {}).get("name"), 32) or "1"
                 }
                 for w in wins
             ]

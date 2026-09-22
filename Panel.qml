@@ -30,39 +30,45 @@ Panel {
     }
   }
 
-  function runScript(args) {
-    Quickshell.execDetached(["bash", "-c", root.scriptPath + " " + args])
+  function runScript(argv) {
+    var cmd = [root.scriptPath].concat(argv)
+    Quickshell.execDetached(cmd)
     refreshTimer.restart()
   }
 
   function restoreAll() {
-    runScript("restore-all")
+    runScript(["restore-all"])
   }
 
   function restoreLast() {
-    runScript("restore-last")
+    runScript(["restore-last"])
   }
 
   function restoreApp(appClass) {
-    runScript("restore-app " + Util.shellQuote(appClass))
+    runScript(["restore-app", String(appClass)])
   }
 
   function restoreWindow(addr) {
-    runScript("restore " + Util.shellQuote(addr))
+    runScript(["restore", String(addr)])
   }
 
   function minimizeFocused() {
-    runScript("minimize")
+    runScript(["minimize"])
   }
 
   function closeWindow(addr) {
-    runScript("close " + Util.shellQuote(addr))
+    runScript(["close", String(addr)])
+  }
+
+  function clampString(str, maxLen) {
+    var s = String(str || "").replace(/[\r\n\x00-\x1f\x7f-\x9f]/g, " ").trim()
+    return s.length > maxLen ? s.slice(0, maxLen) : s
   }
 
   // --- Backend Process ---
   Process {
     id: statusProc
-    command: ["bash", "-c", root.scriptPath + " status --json"]
+    command: [root.scriptPath, "status", "--json"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
@@ -70,7 +76,29 @@ Panel {
           var data = JSON.parse(text.trim())
           root.minimizedCount = data.count || 0
           root.hasMinimized = data.has_minimized || false
-          root.groups = data.groups || []
+
+          var rawGroups = data.groups || []
+          var cleanGroups = []
+          for (var i = 0; i < rawGroups.length; i++) {
+            var g = rawGroups[i]
+            var cleanWins = []
+            var rawWins = g.windows || []
+            for (var j = 0; j < rawWins.length; j++) {
+              var w = rawWins[j]
+              cleanWins.push({
+                address: String(w.address || ""),
+                title: clampString(w.title, 128) || "Untitled",
+                workspace: clampString(w.workspace, 32) || "1"
+              })
+            }
+            cleanGroups.push({
+              class: clampString(g.class, 64) || "window",
+              count: g.count || 0,
+              icon: clampString(g.icon, 64) || "window",
+              windows: cleanWins
+            })
+          }
+          root.groups = cleanGroups
           root.allWindows = data.windows || []
         } catch(e) {}
       }
@@ -190,6 +218,7 @@ Panel {
               }
 
               Text {
+                textFormat: Text.PlainText
                 text: root.hasMinimized
                   ? (root.minimizedCount + " window" + (root.minimizedCount === 1 ? "" : "s") + " across " + root.groups.length + " group" + (root.groups.length === 1 ? "" : "s"))
                   : "No windows currently minimized"
@@ -273,7 +302,8 @@ Panel {
                         }
 
                         Text {
-                          text: groupItem.modelData.class.toUpperCase()
+                          textFormat: Text.PlainText
+                          text: clampString(groupItem.modelData.class, 64).toUpperCase()
                           color: root.foreground
                           font.family: root.fontFamily
                           font.pixelSize: Style.font.body
@@ -290,6 +320,7 @@ Panel {
 
                           Text {
                             id: groupCountText
+                            textFormat: Text.PlainText
                             anchors.centerIn: parent
                             text: groupItem.modelData.count + ""
                             color: root.foreground
@@ -344,6 +375,7 @@ Panel {
 
                             Text {
                               id: wsText
+                              textFormat: Text.PlainText
                               anchors.centerIn: parent
                               text: "WS " + (winRow.modelData.workspace || "1")
                               color: Util.alpha(root.foreground, 0.7)
@@ -353,7 +385,8 @@ Panel {
                           }
 
                           Text {
-                            text: winRow.modelData.title || "Untitled"
+                            textFormat: Text.PlainText
+                            text: clampString(winRow.modelData.title, 128) || "Untitled"
                             color: root.foreground
                             font.family: root.fontFamily
                             font.pixelSize: Style.font.caption

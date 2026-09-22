@@ -16,7 +16,7 @@ Item {
 
   Process {
     id: cleanProc
-    command: ["bash", "-c", root.scriptPath + " clean"]
+    command: [root.scriptPath, "clean"]
   }
 
   // Periodic cleanup timer (every 10 seconds)
