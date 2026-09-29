@@ -10,7 +10,7 @@ depends=('hyprland' 'quickshell')
 makedepends=('git' 'gcc' 'make' 'pkgconf' 'hyprland-headers')
 provides=('omarchy-plugin-window-minimize')
 conflicts=('omarchy-plugin-window-minimize')
-_commit="1a88115f8a0089ac0f6509447d0062a2a787c222"
+_commit="8e42a720cf0b919c2a52d76ba8bdd8d31fc57292"
 source=("${pkgname}::git+https://github.com/Azteriisk/omarchy-window-minimize.git#commit=${_commit}")
 sha256sums=('SKIP')
 
