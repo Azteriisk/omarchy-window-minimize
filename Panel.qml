@@ -73,16 +73,18 @@ Panel {
       waitForEnd: true
       onStreamFinished: {
         try {
-          var data = JSON.parse(text.trim())
-          root.minimizedCount = data.count || 0
+          var cleanText = text.trim()
+          if (cleanText.length > 512 * 1024) return
+          var data = JSON.parse(cleanText)
+          root.minimizedCount = Math.min(data.count || 0, 100)
           root.hasMinimized = data.has_minimized || false
 
-          var rawGroups = data.groups || []
+          var rawGroups = (data.groups || []).slice(0, 50)
           var cleanGroups = []
           for (var i = 0; i < rawGroups.length; i++) {
             var g = rawGroups[i]
             var cleanWins = []
-            var rawWins = g.windows || []
+            var rawWins = (g.windows || []).slice(0, 50)
             for (var j = 0; j < rawWins.length; j++) {
               var w = rawWins[j]
               cleanWins.push({
@@ -93,13 +95,13 @@ Panel {
             }
             cleanGroups.push({
               class: clampString(g.class, 64) || "window",
-              count: g.count || 0,
+              count: Math.min(g.count || 0, 50),
               icon: clampString(g.icon, 64) || "window",
               windows: cleanWins
             })
           }
           root.groups = cleanGroups
-          root.allWindows = data.windows || []
+          root.allWindows = (data.windows || []).slice(0, 100)
         } catch(e) {}
       }
     }
@@ -114,7 +116,7 @@ Panel {
 
   Timer {
     interval: 2000
-    running: true
+    running: root.opened
     repeat: true
     onTriggered: root.refresh()
   }

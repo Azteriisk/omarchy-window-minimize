@@ -76,12 +76,8 @@ static bool isNativeTrayApp(PHLWINDOW pWindow) {
     return false;
 }
 
-static void logMsg(const std::string& msg) {
-    std::ofstream ofs("/tmp/minimize-hook.log", std::ios::app);
-    if (ofs.is_open()) {
-        auto now = std::chrono::system_clock::now();
-        ofs << std::format("[{:%FT%T}] {}\n", now, msg);
-    }
+static inline void logMsg([[maybe_unused]] const std::string& msg) {
+    // Production logging removed to prevent compositor latency and disk exhaustion
 }
 
 static void triggerMinimize(PHLWINDOW pWindow) {

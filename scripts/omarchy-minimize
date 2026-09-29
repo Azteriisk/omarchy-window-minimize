@@ -32,26 +32,31 @@ def clamp_text(val: str | None, max_len: int = 128) -> str:
 
 
 def run_hyprctl(args: list[str]) -> tuple[int, str]:
-    """Execute hyprctl with args and return (code, stdout)."""
+    """Execute hyprctl with args and return (code, stdout). Bounded by timeout and byte limit."""
     try:
         res = subprocess.run(
             ["hyprctl", *args],
             capture_output=True,
             text=True,
-            check=False
+            check=False,
+            timeout=2.0
         )
-        return res.returncode, res.stdout
+        # Enforce 512KB producer ceiling
+        return res.returncode, res.stdout[:512 * 1024]
     except Exception as e:
         return 1, str(e)
 
 
 def get_hypr_json(command: str):
-    """Query hyprctl -j <command> and parse JSON."""
+    """Query hyprctl -j <command> and parse JSON with cardinality bounds."""
     code, out = run_hyprctl(["-j", command])
     if code != 0 or not out.strip():
         return None
     try:
-        return json.loads(out)
+        data = json.loads(out)
+        if isinstance(data, list):
+            return data[:100]
+        return data
     except json.JSONDecodeError:
         return None
 
@@ -102,10 +107,10 @@ def reconcile_state() -> tuple[list[dict], list[dict]]:
     Reconcile saved state against currently running Hyprland clients.
     Returns (living_minimized_windows, all_clients).
     """
-    clients = get_hypr_json("clients") or []
+    clients = (get_hypr_json("clients") or [])[:100]
     client_map = {c.get("address"): c for c in clients if c.get("address")}
     
-    saved = load_state()
+    saved = load_state()[:100]
     living = []
     
     for item in saved:
@@ -119,6 +124,8 @@ def reconcile_state() -> tuple[list[dict], list[dict]]:
                 if live_win.get("title"):
                     item["current_title"] = clamp_text(live_win["title"], 128)
                 living.append(item)
+                if len(living) >= 100:
+                    break
     
     if len(living) != len(saved):
         save_state(living)
@@ -543,6 +550,7 @@ def cmd_list(as_json: bool = False) -> int:
 def cmd_status(as_json: bool = True) -> int:
     """Return status summary for bar widgets and external services."""
     living_state, _ = reconcile_state()
+    living_state = living_state[:100]
     
     groups_dict: dict[str, list[dict]] = {}
     for w in living_state:
@@ -550,11 +558,11 @@ def cmd_status(as_json: bool = True) -> int:
         groups_dict.setdefault(cls, []).append(w)
 
     group_list = []
-    for cls, wins in groups_dict.items():
+    for cls, wins in list(groups_dict.items())[:50]:
         clean_cls = clamp_text(cls, 64) or "window"
         group_list.append({
             "class": clean_cls,
-            "count": len(wins),
+            "count": min(len(wins), 50),
             "icon": clean_cls.lower(),
             "windows": [
                 {
@@ -562,7 +570,7 @@ def cmd_status(as_json: bool = True) -> int:
                     "title": clamp_text(w.get("title"), 128) or "Untitled",
                     "workspace": clamp_text(w.get("workspace", {}).get("name"), 32) or "1"
                 }
-                for w in wins
+                for w in wins[:50]
             ]
         })
 
